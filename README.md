@@ -1,3 +1,3 @@
-##SpectroChip
+### SpectroChip
 
 spectrochip python script
