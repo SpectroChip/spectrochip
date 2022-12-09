@@ -96,7 +96,6 @@ class Ui_mainwindow(object):
         self.format_box.setObjectName("format_box")
         self.format_box.addItem("")
         self.format_box.addItem("")
-        self.format_box.addItem("")
         self.shutter_edit = QtWidgets.QLineEdit(self.centralwidget)
         self.shutter_edit.setGeometry(QtCore.QRect(220, 50, 104, 31))
         self.shutter_edit.setObjectName("shutter_edit")
@@ -203,7 +202,7 @@ class Ui_mainwindow(object):
         self.w_cal_button_label.setGeometry(QtCore.QRect(770, 380, 300, 16))
         
         self.max_shutter_label = QtWidgets.QLabel(self.centralwidget)
-        self.max_shutter_label.setGeometry(QtCore.QRect(330, 60, 120, 16))		
+        self.max_shutter_label.setGeometry(QtCore.QRect(330, 60, 150, 16))		
         self.max_anologgain_label = QtWidgets.QLabel(self.centralwidget)
         self.max_anologgain_label.setGeometry(QtCore.QRect(330, 100, 120, 16))
         self.max_digitalgain_label = QtWidgets.QLabel(self.centralwidget)
@@ -320,7 +319,6 @@ class Ui_mainwindow(object):
         self.start.setText(_translate("mainwindow", "START"))
         self.format_box.setItemText(0, _translate("mainwindow", "BMP"))
         self.format_box.setItemText(1, _translate("mainwindow", "JPG"))
-        self.format_box.setItemText(2, _translate("mainwindow", "RAW"))
         self.label.setText(_translate("mainwindow", "Image Format"))
         self.label_2.setText(_translate("mainwindow", "Shutter"))
         self.label_3.setText(_translate("mainwindow", "Anolog Gain"))
@@ -337,14 +335,14 @@ class Ui_mainwindow(object):
         self.e2_label.setText(_translate("mainwindow", "E"))
         self.e3_label.setText(_translate("mainwindow", "E"))
         self.auto_scaling.setText(_translate("mainwindow", "START"))
-        self.max_shutter_label.setText(_translate("mainwindow", "Max: " + str(st_max) + "\u03BCs"))#microseconds
+        self.max_shutter_label.setText(_translate("mainwindow", "Max: " + str(st_max) + " \u03BCs"))#microseconds
         self.max_anologgain_label.setText(_translate("mainwindow", "Max: " + str(ag_max)))
         self.max_digitalgain_label.setText(_translate("mainwindow", "Not Functioning"))
         self.auto_roi_label.setText(_translate("mainwindow", "ROI Scan"))
         self.auto_roi.setText(_translate("mainwindow", "MANUAL"))
         self.auto_scaling_label.setText(_translate("mainwindow", "Auto Scaling"))
-        self.I_max_label.setText(_translate("mainwindow", "I Max"))
-        self.I_thr_percentage_label.setText(_translate("mainwindow", "Thr percentage"))
+        self.I_max_label.setText(_translate("mainwindow", "Intensity Max"))
+        self.I_thr_percentage_label.setText(_translate("mainwindow", "Thersold (%)"))
         self.I_thr_tolerance_label.setText(_translate("mainwindow", "Thr tolerance"))
         self.numberof_scan_label.setText(_translate("mainwindow", "Num of scan"))
         self.w_cal_button.setText(_translate("mainwindow", "Calculate"))
@@ -353,11 +351,11 @@ class Ui_mainwindow(object):
         self.camerawidth_label.setText(_translate("mainwindow", "IMG Width : 1280 Pixel"))
         self.cameraheight_label.setText(_translate("mainwindow", "IMG Height : 800 Pixel"))
         self.camerapixelsize_label.setText(_translate("mainwindow", "Pixel Size : 3 \u03BCm x 3 \u03BCm"))
-        self.window_length_label.setText(_translate("mainwindow", "W_Length"))
-        self.polyorder_label.setText(_translate("mainwindow", "PolyOrder"))
+        self.window_length_label.setText(_translate("mainwindow", "Data Point"))
+        self.polyorder_label.setText(_translate("mainwindow", "Poly Order"))
         self.w_cal_button_label.setText(_translate("mainwindow", "Press start to use calculate"))
-        self.changedefault_label.setText(_translate("mainwindow", "Change Default :"))
-        self.cahnge_btn.setText(_translate("mainwindow", "Change"))
+        self.changedefault_label.setText(_translate("mainwindow", "Save As Default :"))
+        self.cahnge_btn.setText(_translate("mainwindow", "SAVE"))
             
         self.pixel_graph.setBackground('w')
         self.pixel_graph.setLabel('left', 'Intensity')
@@ -509,7 +507,7 @@ class Ui_mainwindow(object):
             y = signal.savgol_filter(ncolmean, int(self.window_length_edit.text()), int(self.polyorder_edit.text()))
         else:
             y = ncolmean
-        c_ui.c_graph.plot(x, y)
+        c_ui.c_graph.plot(x, y, pen=pg.mkPen('k'))
         secondwindow.show()
     
     def change_btn_clicked(self):
@@ -837,7 +835,7 @@ class Ui_w_calibration(object):
         self.pixel8 = QtWidgets.QLineEdit(w_calibration)
         self.pixel8.setGeometry(QtCore.QRect(140, 215, 50, 20))
         self.pixel9 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel9.setGeometry(QtCore.QRect(140, 240, 50, 20))
+        self.pixel9.setGeometry(QtCore.QRect(140, 230, 50, 20))
         self.pixel10 = QtWidgets.QLineEdit(w_calibration)
         self.pixel10.setGeometry(QtCore.QRect(140, 265, 50, 20))
         
@@ -1107,7 +1105,7 @@ class Ui_w_calibration(object):
                 y = signal.savgol_filter(ncolmean, int(ui.window_length_edit.text()), int(ui.polyorder_edit.text()))
             else:
                 y = ncolmean
-            self.c_wavelength_graph.plot(x, y)	
+            self.c_wavelength_graph.plot(x, y, pen=pg.mkPen('k'))	
             return 1
         except Exception as e:
             print('error:{}'.format(e))
@@ -1505,13 +1503,13 @@ def thread_1():
                 mode = 10
             else:
                 break
-        elif mode == '10':
+        elif mode == 10:
             check = takephoto()
             if check == 1:
                 mode = 20
             else:
                 mode = 999
-        elif mode == 10:
+        elif mode == 20:
             if first_scan == 1:
                 if roi_mode == 0:
                     check = sum_image()
