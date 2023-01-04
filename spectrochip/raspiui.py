@@ -16,6 +16,9 @@ x = config['default']['x']
 y = config['default']['y']
 deltax = config['default']['deltax']
 deltay = config['default']['deltay']
+x_axis_min = config['graph']['x_axis_min']
+x_axis_max = config['graph']['x_axis_max']
+y_axis_min = config['graph']['y_axis_min']
 y_axis_max = config['graph']['y_axis_max']
 
 a3 = config['wavelength_calibration']['a3']
@@ -50,6 +53,7 @@ I_thr_bottom = 0
 
 mode = 0
 auto_mode = 0
+x_mode = 0
 y_mode = 0
 flag = 0
 roi_mode = 1
@@ -155,12 +159,22 @@ class Ui_mainwindow(object):
         self.continue_checkbox.setLayoutDirection(QtCore.Qt.RightToLeft)
         
         self.y_axis = QtWidgets.QPushButton(self.centralwidget)
-        self.y_axis.setGeometry(QtCore.QRect(50, 470, 75, 23))
-        
+        self.y_axis.setGeometry(QtCore.QRect(50, 530, 75, 23))
         self.label_6 = QtWidgets.QLabel(self.centralwidget)
-        self.label_6.setGeometry(QtCore.QRect(70, 495, 100, 16))
+        self.label_6.setGeometry(QtCore.QRect(50, 470, 100, 16))
         self.Yaxis_max = QtWidgets.QLineEdit(self.centralwidget)
-        self.Yaxis_max.setGeometry(QtCore.QRect(70, 515, 50, 31))
+        self.Yaxis_max.setGeometry(QtCore.QRect(80, 490, 50, 31))
+        self.Yaxis_min = QtWidgets.QLineEdit(self.centralwidget)
+        self.Yaxis_min.setGeometry(QtCore.QRect(10, 490, 50, 31))
+        
+        self.x_axis = QtWidgets.QPushButton(self.centralwidget)
+        self.x_axis.setGeometry(QtCore.QRect(50, 630, 75, 23))
+        self.x_axis_label = QtWidgets.QLabel(self.centralwidget)
+        self.x_axis_label.setGeometry(QtCore.QRect(50, 570, 100, 16))
+        self.Xaxis_max = QtWidgets.QLineEdit(self.centralwidget)
+        self.Xaxis_max.setGeometry(QtCore.QRect(80, 590, 50, 31))
+        self.Xaxis_min = QtWidgets.QLineEdit(self.centralwidget)
+        self.Xaxis_min.setGeometry(QtCore.QRect(10, 590, 50, 31))
         
         self.a3_label = QtWidgets.QLabel(self.centralwidget)
         self.a3_label.setGeometry(QtCore.QRect(670, 220, 50, 16))
@@ -281,6 +295,7 @@ class Ui_mainwindow(object):
         QtCore.QMetaObject.connectSlotsByName(mainwindow)
         
         self.start.clicked.connect(self.start_clicked)
+        self.x_axis.clicked.connect(self.x_axis_clicked)	
         self.y_axis.clicked.connect(self.y_axis_clicked)	
         self.auto_scaling.clicked.connect(self.auto_scaling_clicked)	
         self.auto_roi.clicked.connect(self.auto_roi_clicked)	
@@ -290,6 +305,9 @@ class Ui_mainwindow(object):
         self.continue_checkbox.toggled.connect(self.continue_checkbox_check)
         self.sg_filter_checkbox.toggled.connect(self.sg_filter_checkbox_check)
             
+        self.Xaxis_min.textChanged[str].connect(self.x_axis_fix)
+        self.Xaxis_max.textChanged[str].connect(self.x_axis_fix)
+        self.Yaxis_min.textChanged[str].connect(self.y_axis_fix)
         self.Yaxis_max.textChanged[str].connect(self.y_axis_fix)
         self.x0.textChanged[str].connect(self.roi_change)
         self.y0.textChanged[str].connect(self.roi_change)
@@ -324,8 +342,10 @@ class Ui_mainwindow(object):
         self.label_3.setText(_translate("mainwindow", "Anolog Gain"))
         self.label_4.setText(_translate("mainwindow", "Digital Gain"))
         self.label_5.setText(_translate("mainwindow", "ROI : X0 Y0 X1 Y1"))
+        self.x_axis.setText(_translate("mainwindow", "AUTO"))
         self.y_axis.setText(_translate("mainwindow", "AUTO"))
-        self.label_6.setText(_translate("mainwindow", "Y Max"))
+        self.label_6.setText(_translate("mainwindow", "Y Axis"))
+        self.x_axis_label.setText(_translate("mainwindow", "X Axis"))
         self.a0_label.setText(_translate("mainwindow", "a0"))
         self.a1_label.setText(_translate("mainwindow", "a1"))
         self.a2_label.setText(_translate("mainwindow", "a2"))
@@ -376,7 +396,10 @@ class Ui_mainwindow(object):
         self.y0.setText(y)
         self.x1.setText(deltax)
         self.y1.setText(deltay)
+        self.Yaxis_min.setText(y_axis_min)
         self.Yaxis_max.setText(y_axis_max)
+        self.Xaxis_min.setText(x_axis_min)
+        self.Xaxis_max.setText(x_axis_max)
         
         self.a3.setText(a3)
         self.a2.setText(a2)
@@ -413,6 +436,9 @@ class Ui_mainwindow(object):
         self.y0.setValidator(QtGui.QIntValidator())
         self.x1.setValidator(QtGui.QIntValidator())
         self.y1.setValidator(QtGui.QIntValidator())
+        self.Xaxis_min.setValidator(QtGui.QIntValidator())
+        self.Xaxis_max.setValidator(QtGui.QIntValidator())
+        self.Yaxis_min.setValidator(QtGui.QIntValidator())
         self.Yaxis_max.setValidator(QtGui.QIntValidator())
         self.a0.setValidator(QtGui.QDoubleValidator())
         self.a1.setValidator(QtGui.QDoubleValidator())
@@ -429,6 +455,9 @@ class Ui_mainwindow(object):
         self.window_length_edit.setValidator(QtGui.QIntValidator())
         self.polyorder_edit.setValidator(QtGui.QIntValidator())
         
+        self.Xaxis_min.setEnabled(False)
+        self.Xaxis_max.setEnabled(False)
+        self.Yaxis_min.setEnabled(False)
         self.Yaxis_max.setEnabled(False)
         self.w_cal_button.setEnabled(False)
         
@@ -459,19 +488,43 @@ class Ui_mainwindow(object):
         _translate = QtCore.QCoreApplication.translate
         
         if y_mode == 0: 
-            yaxis = self.Yaxis_max.text()
+            yaxis_min = self.Yaxis_min.text()
+            yaxis_max = self.Yaxis_max.text()
             
-            self.pixel_graph.setYRange(0, int(yaxis), padding=0)
-            self.wavelength_graph.setYRange(0, int(yaxis), padding=0)
+            self.pixel_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
+            self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
             self.y_axis.setText(_translate("mainwindow", "FIX"))
+            self.Yaxis_min.setEnabled(True)
             self.Yaxis_max.setEnabled(True)
             y_mode = 1
         elif y_mode == 1:
             self.pixel_graph.enableAutoRange(axis='y')
             self.wavelength_graph.enableAutoRange(axis='y')
             self.y_axis.setText(_translate("mainwindow", "AUTO"))
+            self.Yaxis_min.setEnabled(False)
             self.Yaxis_max.setEnabled(False)
             y_mode = 0
+            
+    def x_axis_clicked(self):
+        global x_mode
+        _translate = QtCore.QCoreApplication.translate
+        
+        if x_mode == 0: 
+            xaxis_min = self.Xaxis_min.text()
+            xaxis_max = self.Xaxis_max.text()
+            self.pixel_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
+            self.wavelength_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
+            self.x_axis.setText(_translate("mainwindow", "FIX"))
+            self.Xaxis_min.setEnabled(True)
+            self.Xaxis_max.setEnabled(True)
+            x_mode = 1
+        elif x_mode == 1:
+            self.pixel_graph.enableAutoRange(axis='x')
+            self.wavelength_graph.enableAutoRange(axis='x')
+            self.x_axis.setText(_translate("mainwindow", "AUTO"))
+            self.Xaxis_min.setEnabled(False)
+            self.Xaxis_max.setEnabled(False)
+            x_mode = 0
             
     def auto_scaling_clicked(self):
         global auto_mode
@@ -563,9 +616,16 @@ class Ui_mainwindow(object):
                     raise Exception
                             
     def y_axis_fix(self):
-        yaxis = self.Yaxis_max.text()
-        self.pixel_graph.setYRange(0, int(yaxis), padding=0)
-        self.wavelength_graph.setYRange(0, int(yaxis), padding=0)
+        yaxis_min = self.Yaxis_min.text()
+        yaxis_max = self.Yaxis_max.text()
+        self.pixel_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
+        self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
+        
+    def x_axis_fix(self):
+        xaxis_min = self.Xaxis_min.text()
+        xaxis_max = self.Xaxis_max.text()
+        self.pixel_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
+        self.wavelength_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
     
     def roi_change(self):
         self.update_image_signal()
