@@ -39,8 +39,8 @@ num_scan = config['numof_scan']['numberof_scan']
 w_length = config['sgfilter']['window_length']
 poly_order = config['sgfilter']['polyorder']
 
-st_max = 1000000
-ag_max = 100000000
+st_max = 100000
+ag_max = 10000000
 
 st1 = 0
 st2 = 0
@@ -55,6 +55,8 @@ mode = 0
 auto_mode = 0
 x_mode = 0
 y_mode = 0
+w_x_mode = 0
+w_y_mode = 0
 flag = 0
 roi_mode = 1
 
@@ -89,12 +91,13 @@ class SignalCommunication(QtCore.QObject):
 class Ui_mainwindow(object):
     def setupUi(self, mainwindow):
         mainwindow.setObjectName("mainwindow")
-        mainwindow.resize(1280, 960)
+        mainwindow.resize(1310, 965)
         self.centralwidget = QtWidgets.QWidget(mainwindow)
         self.centralwidget.setObjectName("centralwidget")
-        self.start = QtWidgets.QPushButton(self.centralwidget)
-        self.start.setGeometry(QtCore.QRect(50, 420, 75, 23))
-        self.start.setObjectName("start")
+        
+        self.camera_list = QtWidgets.QListView(self.centralwidget)
+        self.camera_list.setGeometry(QtCore.QRect(70, 15, 380, 155))
+        self.camera_list.setObjectName("camera_list")
         self.format_box = QtWidgets.QComboBox(self.centralwidget)
         self.format_box.setGeometry(QtCore.QRect(220, 20, 69, 22))
         self.format_box.setObjectName("format_box")
@@ -121,21 +124,7 @@ class Ui_mainwindow(object):
         self.digitalgain_edit = QtWidgets.QLineEdit(self.centralwidget)
         self.digitalgain_edit.setGeometry(QtCore.QRect(220, 130, 104, 31))
         self.digitalgain_edit.setObjectName("digitalgain_edit")
-        self.label_5 = QtWidgets.QLabel(self.centralwidget)
-        self.label_5.setGeometry(QtCore.QRect(60, 180, 150, 16))
-        self.label_5.setObjectName("label_5")
-        self.x0 = QtWidgets.QLineEdit(self.centralwidget)
-        self.x0.setGeometry(QtCore.QRect(200, 170, 50, 31))
-        self.x0.setObjectName("x0")
-        self.y0 = QtWidgets.QLineEdit(self.centralwidget)
-        self.y0.setGeometry(QtCore.QRect(260, 170, 50, 31))
-        self.y0.setObjectName("y0")
-        self.x1 = QtWidgets.QLineEdit(self.centralwidget)
-        self.x1.setGeometry(QtCore.QRect(320, 170, 50, 31))
-        self.x1.setObjectName("x1")
-        self.y1 = QtWidgets.QLineEdit(self.centralwidget)
-        self.y1.setGeometry(QtCore.QRect(380, 170, 50, 31))
-        self.y1.setObjectName("y1")
+        
         mainwindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(mainwindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 831, 21))
@@ -146,161 +135,324 @@ class Ui_mainwindow(object):
         mainwindow.setStatusBar(self.statusbar)
         
         self.pixel_graph = pg.PlotWidget(self.centralwidget)
-        self.pixel_graph.setGeometry(QtCore.QRect(140, 420, 500, 400))
+        self.pixel_graph.setGeometry(QtCore.QRect(145, 510, 500, 400))
         
         self.wavelength_graph = pg.PlotWidget(self.centralwidget)
-        self.wavelength_graph.setGeometry(QtCore.QRect(670, 420, 500, 400))
+        self.wavelength_graph.setGeometry(QtCore.QRect(660, 510, 500, 400))
         
         self.image_frame = QtWidgets.QLabel(self.centralwidget)
-        self.image_frame.setGeometry(QtCore.QRect(470, 5, 300, 200))
+        self.image_frame.setGeometry(QtCore.QRect(470, 5, 300, 200)) 
         
+        self.camera_start_list = QtWidgets.QListView(self.centralwidget)
+        self.camera_start_list.setGeometry(QtCore.QRect(70, 425, 380, 75))
+        self.camera_start_list.setObjectName("camera_start_list")
+        self.start = QtWidgets.QPushButton(self.centralwidget)
+        self.start.setGeometry(QtCore.QRect(100, 470, 75, 23))
+        self.start.setObjectName("start")
         self.continue_checkbox = QtWidgets.QCheckBox('continuous',self.centralwidget)
-        self.continue_checkbox.setGeometry(QtCore.QRect(30, 445, 100, 23))
-        self.continue_checkbox.setLayoutDirection(QtCore.Qt.RightToLeft)
+        self.continue_checkbox.setGeometry(QtCore.QRect(220, 470, 100, 23))
+        self.continue_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)
         
-        self.y_axis = QtWidgets.QPushButton(self.centralwidget)
-        self.y_axis.setGeometry(QtCore.QRect(50, 530, 75, 23))
+        self.pixel_list = QtWidgets.QListView(self.centralwidget)
+        self.pixel_list.setGeometry(QtCore.QRect(5, 615, 130, 195))
+        self.pixel_list.setObjectName("pixel_list")
         self.label_6 = QtWidgets.QLabel(self.centralwidget)
-        self.label_6.setGeometry(QtCore.QRect(50, 470, 100, 16))
+        self.label_6.setGeometry(QtCore.QRect(50, 620, 100, 16))
+        self.label_6.setObjectName("label_6")
+        self.y_axis = QtWidgets.QPushButton(self.centralwidget)
+        self.y_axis.setGeometry(QtCore.QRect(40, 680, 75, 23))
+        self.y_axis.setObjectName("y_axis")
         self.Yaxis_max = QtWidgets.QLineEdit(self.centralwidget)
-        self.Yaxis_max.setGeometry(QtCore.QRect(80, 490, 50, 31))
+        self.Yaxis_max.setGeometry(QtCore.QRect(80, 640, 50, 31))
+        self.Yaxis_max.setObjectName("Yaxis_max")
         self.Yaxis_min = QtWidgets.QLineEdit(self.centralwidget)
-        self.Yaxis_min.setGeometry(QtCore.QRect(10, 490, 50, 31))
-        
-        self.x_axis = QtWidgets.QPushButton(self.centralwidget)
-        self.x_axis.setGeometry(QtCore.QRect(50, 630, 75, 23))
+        self.Yaxis_min.setGeometry(QtCore.QRect(10, 640, 50, 31))
+        self.Yaxis_min.setObjectName("Yaxis_min")
         self.x_axis_label = QtWidgets.QLabel(self.centralwidget)
-        self.x_axis_label.setGeometry(QtCore.QRect(50, 570, 100, 16))
-        self.Xaxis_max = QtWidgets.QLineEdit(self.centralwidget)
-        self.Xaxis_max.setGeometry(QtCore.QRect(80, 590, 50, 31))
+        self.x_axis_label.setGeometry(QtCore.QRect(50, 720, 100, 16))
+        self.x_axis_label.setObjectName("x_axis_label")
         self.Xaxis_min = QtWidgets.QLineEdit(self.centralwidget)
-        self.Xaxis_min.setGeometry(QtCore.QRect(10, 590, 50, 31))
+        self.Xaxis_min.setGeometry(QtCore.QRect(10, 740, 50, 31))
+        self.Xaxis_min.setObjectName("Xaxis_min")
+        self.Xaxis_max = QtWidgets.QLineEdit(self.centralwidget)
+        self.Xaxis_max.setGeometry(QtCore.QRect(80, 740, 50, 31))
+        self.Xaxis_max.setObjectName("Xaxis_max")
+        self.x_axis = QtWidgets.QPushButton(self.centralwidget)
+        self.x_axis.setGeometry(QtCore.QRect(40, 780, 75, 23))
+        self.x_axis.setObjectName("x_axis")
+        
+        self.wavelength_list = QtWidgets.QListView(self.centralwidget)
+        self.wavelength_list.setGeometry(QtCore.QRect(1170, 615, 130, 195))
+        self.wavelength_list.setObjectName("wavelength_list")
+        self.w_x_axis_label = QtWidgets.QLabel(self.centralwidget)
+        self.w_x_axis_label.setGeometry(QtCore.QRect(1215, 720, 100, 16))
+        self.w_x_axis_label.setObjectName("w_x_axis_label")
+        self.w_x_axis = QtWidgets.QPushButton(self.centralwidget)
+        self.w_x_axis.setGeometry(QtCore.QRect(1195, 780, 75, 23))
+        self.w_x_axis.setObjectName("w_x_axis")
+        self.W_Xaxis_max = QtWidgets.QLineEdit(self.centralwidget)
+        self.W_Xaxis_max.setGeometry(QtCore.QRect(1245, 740, 50, 31))
+        self.W_Xaxis_max.setObjectName("W_Xaxis_max")
+        self.W_Xaxis_min = QtWidgets.QLineEdit(self.centralwidget)
+        self.W_Xaxis_min.setGeometry(QtCore.QRect(1175, 740, 50, 31))
+        self.W_Xaxis_min.setObjectName("W_Xaxis_min")
+        self.W_Yaxis_min = QtWidgets.QLineEdit(self.centralwidget)
+        self.W_Yaxis_min.setGeometry(QtCore.QRect(1175, 640, 50, 31))
+        self.W_Yaxis_min.setObjectName("W_Yaxis_min")
+        self.W_Yaxis_max = QtWidgets.QLineEdit(self.centralwidget)
+        self.W_Yaxis_max.setGeometry(QtCore.QRect(1245, 640, 50, 31))
+        self.W_Yaxis_max.setObjectName("W_Yaxis_max")
+        self.w_y_axis = QtWidgets.QPushButton(self.centralwidget)
+        self.w_y_axis.setGeometry(QtCore.QRect(1195, 680, 75, 23))
+        self.w_y_axis.setObjectName("w_y_axis")
+        self.label_7 = QtWidgets.QLabel(self.centralwidget)
+        self.label_7.setGeometry(QtCore.QRect(1215, 620, 100, 16))
+        self.label_7.setObjectName("label_7")
+        
+        self.w_parameter_list = QtWidgets.QListView(self.centralwidget)
+        self.w_parameter_list.setGeometry(QtCore.QRect(660, 265, 405, 220))
+        self.w_parameter_list.setObjectName("w_parameter_list")
+        self.w_parameter_label = QtWidgets.QLabel(self.centralwidget)
+        self.w_parameter_label.setGeometry(QtCore.QRect(670, 270, 150, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.w_parameter_label.setFont(font)
+        self.w_parameter_label.setObjectName("w_parameter_label")
         
         self.a3_label = QtWidgets.QLabel(self.centralwidget)
-        self.a3_label.setGeometry(QtCore.QRect(670, 220, 50, 16))
-        self.a2_label = QtWidgets.QLabel(self.centralwidget)
-        self.a2_label.setGeometry(QtCore.QRect(670, 260, 50, 16))
-        self.a1_label = QtWidgets.QLabel(self.centralwidget)
-        self.a1_label.setGeometry(QtCore.QRect(670, 300, 50, 16))
-        self.a0_label = QtWidgets.QLabel(self.centralwidget)
-        self.a0_label.setGeometry(QtCore.QRect(670, 340, 50, 16))		
+        self.a3_label.setGeometry(QtCore.QRect(670, 300, 50, 16))
+        self.a3_label.setObjectName("a3_label")
         self.a3 = QtWidgets.QLineEdit(self.centralwidget)
-        self.a3.setGeometry(QtCore.QRect(700, 210, 80, 30))
+        self.a3.setGeometry(QtCore.QRect(700, 290, 80, 30))
+        self.a3.setObjectName("a3")
+        self.a2_label = QtWidgets.QLabel(self.centralwidget)
+        self.a2_label.setGeometry(QtCore.QRect(670, 340, 50, 16))
+        self.a2_label.setObjectName("a2_label")
         self.a2 = QtWidgets.QLineEdit(self.centralwidget)
-        self.a2.setGeometry(QtCore.QRect(700, 250, 80, 30))
+        self.a2.setGeometry(QtCore.QRect(700, 330, 80, 30))
+        self.a2.setObjectName("a2")
+        self.a1_label = QtWidgets.QLabel(self.centralwidget)
+        self.a1_label.setGeometry(QtCore.QRect(670, 380, 50, 16))
+        self.a1_label.setObjectName("a1_label")
         self.a1 = QtWidgets.QLineEdit(self.centralwidget)
-        self.a1.setGeometry(QtCore.QRect(700, 290, 80, 30))
+        self.a1.setGeometry(QtCore.QRect(700, 370, 80, 30))
+        self.a1.setObjectName("a1")
+        self.a0_label = QtWidgets.QLabel(self.centralwidget)
+        self.a0_label.setGeometry(QtCore.QRect(670, 420, 50, 16))
+        self.a0_label.setObjectName("a0_label")
         self.a0 = QtWidgets.QLineEdit(self.centralwidget)
-        self.a0.setGeometry(QtCore.QRect(700, 330, 80, 30))
+        self.a0.setGeometry(QtCore.QRect(700, 410, 80, 30))
+        self.a0.setObjectName("a0")
         
         self.e3_label = QtWidgets.QLabel(self.centralwidget)
-        self.e3_label.setGeometry(QtCore.QRect(790, 220, 50, 16))
+        self.e3_label.setGeometry(QtCore.QRect(790, 300, 50, 16))
+        self.e3_label.setObjectName("e3_label")
         self.e2_label = QtWidgets.QLabel(self.centralwidget)
-        self.e2_label.setGeometry(QtCore.QRect(790, 260, 50, 16))
+        self.e2_label.setGeometry(QtCore.QRect(790, 340, 50, 16))
+        self.e2_label.setObjectName("e2_label")
         self.e1_label = QtWidgets.QLabel(self.centralwidget)
-        self.e1_label.setGeometry(QtCore.QRect(790, 300, 50, 16))
+        self.e1_label.setGeometry(QtCore.QRect(790, 380, 50, 16))
+        self.e1_label.setObjectName("e1_label")
         self.e0_label = QtWidgets.QLabel(self.centralwidget)
-        self.e0_label.setGeometry(QtCore.QRect(790, 340, 50, 16))		
+        self.e0_label.setGeometry(QtCore.QRect(790, 420, 50, 16))
+        self.e0_label.setObjectName("e0_label")
         self.e3 = QtWidgets.QLineEdit(self.centralwidget)
-        self.e3.setGeometry(QtCore.QRect(810, 210, 50, 30))
+        self.e3.setGeometry(QtCore.QRect(810, 290, 80, 30))
+        self.e3.setObjectName("e3")
         self.e2 = QtWidgets.QLineEdit(self.centralwidget)
-        self.e2.setGeometry(QtCore.QRect(810, 250, 50, 30))
+        self.e2.setGeometry(QtCore.QRect(810, 330, 80, 30))
+        self.e2.setObjectName("e2")
         self.e1 = QtWidgets.QLineEdit(self.centralwidget)
-        self.e1.setGeometry(QtCore.QRect(810, 290, 50, 30))
+        self.e1.setGeometry(QtCore.QRect(810, 370, 80, 30))
+        self.e1.setObjectName("e1")
         self.e0 = QtWidgets.QLineEdit(self.centralwidget)
-        self.e0.setGeometry(QtCore.QRect(810, 330, 50, 30))
+        self.e0.setGeometry(QtCore.QRect(810, 410, 80, 30))
+        self.e0.setObjectName("e0")
+        
+        self.w_enter_button = QtWidgets.QPushButton(self.centralwidget)
+        self.w_enter_button.setGeometry(QtCore.QRect(670, 450, 90, 30))
+        self.w_enter_button.setObjectName("w_enter_button")
         
         self.w_cal_button = QtWidgets.QPushButton(self.centralwidget)
-        self.w_cal_button.setGeometry(QtCore.QRect(670, 370, 90, 30))
+        self.w_cal_button.setGeometry(QtCore.QRect(930, 310, 90, 30))
+        self.w_cal_button.setObjectName("w_cal_button")
         self.w_cal_button_label = QtWidgets.QLabel(self.centralwidget)
-        self.w_cal_button_label.setGeometry(QtCore.QRect(770, 380, 300, 16))
+        self.w_cal_button_label.setGeometry(QtCore.QRect(920, 340, 131, 40))
+        self.w_cal_button_label.setObjectName("w_cal_button_label")
+        self.w_cal_button_label_2 = QtWidgets.QLabel(self.centralwidget)
+        self.w_cal_button_label_2.setGeometry(QtCore.QRect(910, 270, 150, 40))
+        self.w_cal_button_label_2.setObjectName("w_cal_button_label_2")
         
         self.max_shutter_label = QtWidgets.QLabel(self.centralwidget)
-        self.max_shutter_label.setGeometry(QtCore.QRect(330, 60, 150, 16))		
+        self.max_shutter_label.setGeometry(QtCore.QRect(330, 60, 150, 16))
+        self.max_shutter_label.setObjectName("max_shutter_label")
         self.max_anologgain_label = QtWidgets.QLabel(self.centralwidget)
         self.max_anologgain_label.setGeometry(QtCore.QRect(330, 100, 120, 16))
+        self.max_anologgain_label.setObjectName("max_anologgain_label")
         self.max_digitalgain_label = QtWidgets.QLabel(self.centralwidget)
         self.max_digitalgain_label.setGeometry(QtCore.QRect(330, 140, 120, 16))
+        self.max_digitalgain_label.setObjectName("max_digitalgain_label")
         
+        self.ROI_list = QtWidgets.QListView(self.centralwidget)
+        self.ROI_list.setGeometry(QtCore.QRect(70, 175, 380, 75))
+        self.ROI_list.setObjectName("ROI_list")
         self.auto_roi_label = QtWidgets.QLabel(self.centralwidget)
-        self.auto_roi_label.setGeometry(QtCore.QRect(110, 215, 150, 16))
+        self.auto_roi_label.setGeometry(QtCore.QRect(125, 225, 150, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.auto_roi_label.setFont(font)
+        self.auto_roi_label.setObjectName("auto_roi_label")
         self.auto_roi = QtWidgets.QPushButton(self.centralwidget)
-        self.auto_roi.setGeometry(QtCore.QRect(200, 210, 75, 23))
+        self.auto_roi.setGeometry(QtCore.QRect(210, 220, 75, 23))
+        self.auto_roi.setObjectName("auto_roi")
+        self.label_5 = QtWidgets.QLabel(self.centralwidget)
+        self.label_5.setGeometry(QtCore.QRect(80, 190, 150, 16))
+        self.label_5.setObjectName("label_5")
+        self.x0 = QtWidgets.QLineEdit(self.centralwidget)
+        self.x0.setGeometry(QtCore.QRect(210, 180, 50, 30))
+        self.x0.setObjectName("x0")
+        self.x1 = QtWidgets.QLineEdit(self.centralwidget)
+        self.x1.setGeometry(QtCore.QRect(270, 180, 50, 30))
+        self.x1.setObjectName("x1")
+        self.y0 = QtWidgets.QLineEdit(self.centralwidget)
+        self.y0.setGeometry(QtCore.QRect(330, 180, 50, 30))
+        self.y0.setObjectName("y0")
+        self.y1 = QtWidgets.QLineEdit(self.centralwidget)
+        self.y1.setGeometry(QtCore.QRect(390, 180, 50, 30))
+        self.y1.setObjectName("y1")
+        
+        self.Auto_Scaling_List = QtWidgets.QListView(self.centralwidget)
+        self.Auto_Scaling_List.setGeometry(QtCore.QRect(70, 260, 380, 155))
+        self.Auto_Scaling_List.setObjectName("Auto_Scaling_List")
         
         self.auto_scaling_label = QtWidgets.QLabel(self.centralwidget)
-        self.auto_scaling_label.setGeometry(QtCore.QRect(110, 240, 150, 16))
+        self.auto_scaling_label.setGeometry(QtCore.QRect(100, 270, 150, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.auto_scaling_label.setFont(font)
+        self.auto_scaling_label.setObjectName("auto_scaling_label")
         self.auto_scaling = QtWidgets.QPushButton(self.centralwidget)
-        self.auto_scaling.setGeometry(QtCore.QRect(210, 240, 75, 23))
+        self.auto_scaling.setGeometry(QtCore.QRect(210, 270, 75, 23))
+        self.auto_scaling.setObjectName("auto_scaling")
         self.I_max_label = QtWidgets.QLabel(self.centralwidget)
-        self.I_max_label.setGeometry(QtCore.QRect(110, 280, 150, 16))
+        self.I_max_label.setGeometry(QtCore.QRect(100, 310, 150, 16))
+        self.I_max_label.setObjectName("I_max_label")
         self.I_thr_percentage_label = QtWidgets.QLabel(self.centralwidget)
-        self.I_thr_percentage_label.setGeometry(QtCore.QRect(110, 320, 150, 16))
+        self.I_thr_percentage_label.setGeometry(QtCore.QRect(100, 350, 150, 16))
+        self.I_thr_percentage_label.setObjectName("I_thr_percentage_label")
         self.I_thr_percentage_label1 = QtWidgets.QLabel(self.centralwidget)
-        self.I_thr_percentage_label1.setGeometry(QtCore.QRect(285, 320, 150, 16))
+        self.I_thr_percentage_label1.setGeometry(QtCore.QRect(275, 350, 150, 16))
+        self.I_thr_percentage_label1.setObjectName("I_thr_percentage_label1")
         self.I_thr_tolerance_label = QtWidgets.QLabel(self.centralwidget)
-        self.I_thr_tolerance_label.setGeometry(QtCore.QRect(110, 360, 150, 16))
+        self.I_thr_tolerance_label.setGeometry(QtCore.QRect(100, 390, 150, 16))
+        self.I_thr_tolerance_label.setObjectName("I_thr_tolerance_label")
         self.I_thr_tolerance_label1 = QtWidgets.QLabel(self.centralwidget)
-        self.I_thr_tolerance_label1.setGeometry(QtCore.QRect(285, 360, 150, 16))
+        self.I_thr_tolerance_label1.setGeometry(QtCore.QRect(275, 390, 150, 16))
+        self.I_thr_tolerance_label1.setObjectName("I_thr_tolerance_label1")
         
         self.I_max_edit = QtWidgets.QLineEdit(self.centralwidget)
-        self.I_max_edit.setGeometry(QtCore.QRect(230, 270, 50, 30))
+        self.I_max_edit.setGeometry(QtCore.QRect(220, 300, 50, 30))
+        self.I_max_edit.setObjectName("I_max_edit")
         self.I_thr_percentage_edit = QtWidgets.QLineEdit(self.centralwidget)
-        self.I_thr_percentage_edit.setGeometry(QtCore.QRect(230, 310, 50, 30))
+        self.I_thr_percentage_edit.setGeometry(QtCore.QRect(220, 340, 50, 30))
+        self.I_thr_percentage_edit.setObjectName("I_thr_percentage_edit")
         self.I_thr_tolerance_edit = QtWidgets.QLineEdit(self.centralwidget)
-        self.I_thr_tolerance_edit.setGeometry(QtCore.QRect(230, 350, 50, 30))
+        self.I_thr_tolerance_edit.setGeometry(QtCore.QRect(220, 380, 50, 30))
+        self.I_thr_tolerance_edit.setObjectName("I_thr_tolerance_edit")
         
         self.numberof_scan_label = QtWidgets.QLabel(self.centralwidget)
-        self.numberof_scan_label.setGeometry(QtCore.QRect(110, 390, 150, 16))
-        self.numberof_scan_edit = QtWidgets.QLineEdit(self.centralwidget)
-        self.numberof_scan_edit.setGeometry(QtCore.QRect(230, 385, 50, 30))
+        self.numberof_scan_label.setGeometry(QtCore.QRect(100, 435, 150, 16))
+        self.numberof_scan_label.setObjectName("numberof_scan_label")
         self.numberof_scan_label1 = QtWidgets.QLabel(self.centralwidget)
-        self.numberof_scan_label1.setGeometry(QtCore.QRect(285, 390, 150, 16))
+        self.numberof_scan_label1.setGeometry(QtCore.QRect(275, 435, 150, 16))
+        self.numberof_scan_label1.setObjectName("numberof_scan_label1")
+        self.numberof_scan_edit = QtWidgets.QLineEdit(self.centralwidget)
+        self.numberof_scan_edit.setGeometry(QtCore.QRect(220, 430, 50, 30))
+        self.numberof_scan_edit.setObjectName("numberof_scan_edit")
         
+        self.camera_spec_list = QtWidgets.QListView(self.centralwidget)
+        self.camera_spec_list.setGeometry(QtCore.QRect(790, 15, 190, 110))
+        self.camera_spec_list.setObjectName("camera_spec_list")
         self.cameraspec_label = QtWidgets.QLabel(self.centralwidget)
-        self.cameraspec_label.setGeometry(QtCore.QRect(800, 20, 200, 16))
+        self.cameraspec_label.setGeometry(QtCore.QRect(800, 20, 150, 16))
+        self.cameraspec_label.setObjectName("cameraspec_label")
         self.cameraname_label = QtWidgets.QLabel(self.centralwidget)
-        self.cameraname_label.setGeometry(QtCore.QRect(800, 40, 200, 16))
+        self.cameraname_label.setGeometry(QtCore.QRect(800, 40, 150, 16))
+        self.cameraname_label.setObjectName("cameraname_label")
         self.camerawidth_label = QtWidgets.QLabel(self.centralwidget)
         self.camerawidth_label.setGeometry(QtCore.QRect(800, 60, 200, 16))
+        self.camerawidth_label.setObjectName("camerawidth_label")
         self.cameraheight_label = QtWidgets.QLabel(self.centralwidget)
         self.cameraheight_label.setGeometry(QtCore.QRect(800, 80, 200, 16))
+        self.cameraheight_label.setObjectName("cameraheight_label")
         self.camerapixelsize_label = QtWidgets.QLabel(self.centralwidget)
         self.camerapixelsize_label.setGeometry(QtCore.QRect(800, 100, 200, 16))
+        self.camerapixelsize_label.setObjectName("camerapixelsize_label")
         
-        self.sg_filter_checkbox = QtWidgets.QCheckBox("SG Filter   ",self.centralwidget)
-        self.sg_filter_checkbox.setGeometry(QtCore.QRect(420, 220, 95, 16))
-        self.sg_filter_checkbox.setLayoutDirection(QtCore.Qt.RightToLeft)        
+        self.sg_list = QtWidgets.QListView(self.centralwidget)
+        self.sg_list.setGeometry(QtCore.QRect(470, 265, 150, 115))
+        self.sg_list.setObjectName("sg_list")
+        self.sg_filter_checkbox = QtWidgets.QCheckBox(self.centralwidget)
+        self.sg_filter_checkbox.setGeometry(QtCore.QRect(480, 270, 95, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.sg_filter_checkbox.setFont(font)
+        self.sg_filter_checkbox.setLayoutDirection(QtCore.Qt.RightToLeft)
+        self.sg_filter_checkbox.setObjectName("sg_filter_checkbox")
         self.window_length_label = QtWidgets.QLabel(self.centralwidget)
-        self.window_length_label.setGeometry(QtCore.QRect(420, 260, 100, 16))
-        self.window_length_edit = QtWidgets.QLineEdit(self.centralwidget)
-        self.window_length_edit.setGeometry(QtCore.QRect(500, 250, 50, 30))
+        self.window_length_label.setGeometry(QtCore.QRect(480, 310, 100, 16))
+        self.window_length_label.setObjectName("window_length_label")
         self.polyorder_label = QtWidgets.QLabel(self.centralwidget)
-        self.polyorder_label.setGeometry(QtCore.QRect(420, 300, 100, 16))
+        self.polyorder_label.setGeometry(QtCore.QRect(480, 350, 100, 16))
+        self.polyorder_label.setObjectName("polyorder_label")
+        self.window_length_edit = QtWidgets.QLineEdit(self.centralwidget)
+        self.window_length_edit.setGeometry(QtCore.QRect(560, 300, 50, 30))
+        self.window_length_edit.setObjectName("window_length_edit")
         self.polyorder_edit = QtWidgets.QLineEdit(self.centralwidget)
-        self.polyorder_edit.setGeometry(QtCore.QRect(500, 290, 50, 30))
+        self.polyorder_edit.setGeometry(QtCore.QRect(560, 340, 50, 30))
+        self.polyorder_edit.setObjectName("polyorder_edit")
+        
+        self.default_list = QtWidgets.QListView(self.centralwidget)
+        self.default_list.setGeometry(QtCore.QRect(990, 15, 220, 100))
+        self.default_list.setObjectName("default_list")
         
         self.changedefault_label = QtWidgets.QLabel(self.centralwidget)
         self.changedefault_label.setGeometry(QtCore.QRect(1000, 20, 200, 16))
-        self.roi_default_checkbox = QtWidgets.QCheckBox("ROI",self.centralwidget)
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.changedefault_label.setFont(font)
+        self.changedefault_label.setObjectName("changedefault_label")
+        self.roi_default_checkbox = QtWidgets.QCheckBox(self.centralwidget)
         self.roi_default_checkbox.setGeometry(QtCore.QRect(1000, 40, 95, 16))
-        self.roi_default_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)        
-        self.wavelength_parameter_checkbox = QtWidgets.QCheckBox("Wavelength Parameter",self.centralwidget)
+        self.roi_default_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)
+        self.roi_default_checkbox.setObjectName("roi_default_checkbox")
+        self.wavelength_parameter_checkbox = QtWidgets.QCheckBox(self.centralwidget)
         self.wavelength_parameter_checkbox.setGeometry(QtCore.QRect(1000, 60, 200, 16))
-        self.wavelength_parameter_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)        
+        self.wavelength_parameter_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)
+        self.wavelength_parameter_checkbox.setObjectName("wavelength_parameter_checkbox")
         self.cahnge_btn = QtWidgets.QPushButton(self.centralwidget)
         self.cahnge_btn.setGeometry(QtCore.QRect(1000, 80, 75, 25))
+        self.cahnge_btn.setObjectName("cahnge_btn")
         
         self.statusbar.showMessage("INITIALING")
         self.retranslateUi(mainwindow)
         QtCore.QMetaObject.connectSlotsByName(mainwindow)
         
         self.start.clicked.connect(self.start_clicked)
-        self.x_axis.clicked.connect(self.x_axis_clicked)	
-        self.y_axis.clicked.connect(self.y_axis_clicked)	
-        self.auto_scaling.clicked.connect(self.auto_scaling_clicked)	
-        self.auto_roi.clicked.connect(self.auto_roi_clicked)	
-        self.w_cal_button.clicked.connect(self.w_cal_button_clicked)	
-        self.cahnge_btn.clicked.connect(self.change_btn_clicked)	
+        self.x_axis.clicked.connect(self.x_axis_clicked)    
+        self.y_axis.clicked.connect(self.y_axis_clicked)
+        self.w_x_axis.clicked.connect(self.w_x_axis_clicked)    
+        self.w_y_axis.clicked.connect(self.w_y_axis_clicked)    
+        self.auto_scaling.clicked.connect(self.auto_scaling_clicked)    
+        self.auto_roi.clicked.connect(self.auto_roi_clicked)    
+        self.w_cal_button.clicked.connect(self.w_cal_button_clicked)    
+        self.cahnge_btn.clicked.connect(self.change_btn_clicked)    
+        self.w_enter_button.clicked.connect(self.w_enter_button_clicked)    
         
         self.continue_checkbox.toggled.connect(self.continue_checkbox_check)
         self.sg_filter_checkbox.toggled.connect(self.sg_filter_checkbox_check)
@@ -309,6 +461,10 @@ class Ui_mainwindow(object):
         self.Xaxis_max.textChanged[str].connect(self.x_axis_fix)
         self.Yaxis_min.textChanged[str].connect(self.y_axis_fix)
         self.Yaxis_max.textChanged[str].connect(self.y_axis_fix)
+        self.W_Xaxis_min.textChanged[str].connect(self.w_x_axis_fix)
+        self.W_Xaxis_max.textChanged[str].connect(self.w_x_axis_fix)
+        self.W_Yaxis_min.textChanged[str].connect(self.w_y_axis_fix)
+        self.W_Yaxis_max.textChanged[str].connect(self.w_y_axis_fix)
         self.x0.textChanged[str].connect(self.roi_change)
         self.y0.textChanged[str].connect(self.roi_change)
         self.x1.textChanged[str].connect(self.roi_change)
@@ -334,49 +490,64 @@ class Ui_mainwindow(object):
         
         _translate = QtCore.QCoreApplication.translate
         mainwindow.setWindowTitle(_translate("mainwindow", "Spectrochip"))
-        self.start.setText(_translate("mainwindow", "START"))
+        self.label.setText(_translate("mainwindow", "Image Format"))
         self.format_box.setItemText(0, _translate("mainwindow", "BMP"))
         self.format_box.setItemText(1, _translate("mainwindow", "JPG"))
-        self.label.setText(_translate("mainwindow", "Image Format"))
         self.label_2.setText(_translate("mainwindow", "Shutter"))
         self.label_3.setText(_translate("mainwindow", "Anolog Gain"))
         self.label_4.setText(_translate("mainwindow", "Digital Gain"))
         self.label_5.setText(_translate("mainwindow", "ROI : X0 Y0 X1 Y1"))
-        self.x_axis.setText(_translate("mainwindow", "AUTO"))
-        self.y_axis.setText(_translate("mainwindow", "AUTO"))
+        self.image_frame.setText(_translate("mainwindow", "TextLabel"))
+        self.start.setText(_translate("mainwindow", "START"))
+        self.continue_checkbox.setText(_translate("mainwindow", "coninuous"))
         self.label_6.setText(_translate("mainwindow", "Y Axis"))
+        self.y_axis.setText(_translate("mainwindow", "AUTO"))
         self.x_axis_label.setText(_translate("mainwindow", "X Axis"))
-        self.a0_label.setText(_translate("mainwindow", "a0"))
-        self.a1_label.setText(_translate("mainwindow", "a1"))
-        self.a2_label.setText(_translate("mainwindow", "a2"))
+        self.x_axis.setText(_translate("mainwindow", "AUTO"))
+        self.w_x_axis_label.setText(_translate("mainwindow", "X Axis"))
+        self.w_x_axis.setText(_translate("mainwindow", "AUTO"))
+        self.w_y_axis.setText(_translate("mainwindow", "AUTO"))
+        self.label_7.setText(_translate("mainwindow", "Y Axis"))
         self.a3_label.setText(_translate("mainwindow", "a3"))
-        self.e0_label.setText(_translate("mainwindow", "E"))
-        self.e1_label.setText(_translate("mainwindow", "E"))
-        self.e2_label.setText(_translate("mainwindow", "E"))
+        self.a2_label.setText(_translate("mainwindow", "a2"))
+        self.a1_label.setText(_translate("mainwindow", "a1"))
+        self.a0_label.setText(_translate("mainwindow", "a0"))
         self.e3_label.setText(_translate("mainwindow", "E"))
-        self.auto_scaling.setText(_translate("mainwindow", "START"))
-        self.max_shutter_label.setText(_translate("mainwindow", "Max: " + str(st_max) + " \u03BCs"))#microseconds
-        self.max_anologgain_label.setText(_translate("mainwindow", "Max: " + str(ag_max)))
+        self.e2_label.setText(_translate("mainwindow", "E"))
+        self.e1_label.setText(_translate("mainwindow", "E"))
+        self.e0_label.setText(_translate("mainwindow", "E"))
+        self.w_enter_button.setText(_translate("mainwindow", "ENTER"))
+        self.w_cal_button.setText(_translate("mainwindow", "Calculate"))
+        self.w_cal_button_label.setText(_translate("mainwindow", "Press start to use\ncalculate"))
+        self.max_shutter_label.setText(_translate("mainwindow", "Max: "+str(st_max)+"\u03BCs"))
+        self.max_anologgain_label.setText(_translate("mainwindow", "Max: "+str(ag_max)))
         self.max_digitalgain_label.setText(_translate("mainwindow", "Not Functioning"))
         self.auto_roi_label.setText(_translate("mainwindow", "ROI Scan"))
         self.auto_roi.setText(_translate("mainwindow", "MANUAL"))
         self.auto_scaling_label.setText(_translate("mainwindow", "Auto Scaling"))
+        self.auto_scaling.setText(_translate("mainwindow", "START"))
         self.I_max_label.setText(_translate("mainwindow", "Intensity Max"))
         self.I_thr_percentage_label.setText(_translate("mainwindow", "Thersold (%)"))
+        self.I_thr_percentage_label1.setText(_translate("mainwindow", "TextLabel"))
         self.I_thr_tolerance_label.setText(_translate("mainwindow", "Thr tolerance"))
+        self.I_thr_tolerance_label1.setText(_translate("mainwindow", "TextLabel"))
         self.numberof_scan_label.setText(_translate("mainwindow", "Num of scan"))
-        self.w_cal_button.setText(_translate("mainwindow", "Calculate"))
+        self.numberof_scan_label1.setText(_translate("mainwindow", "TextLabel"))
         self.cameraspec_label.setText(_translate("mainwindow", "Sensor Specification"))
         self.cameraname_label.setText(_translate("mainwindow", "Model : OV9281"))
         self.camerawidth_label.setText(_translate("mainwindow", "IMG Width : 1280 Pixel"))
         self.cameraheight_label.setText(_translate("mainwindow", "IMG Height : 800 Pixel"))
         self.camerapixelsize_label.setText(_translate("mainwindow", "Pixel Size : 3 \u03BCm x 3 \u03BCm"))
+        self.sg_filter_checkbox.setText(_translate("mainwindow", "SG Filter"))
         self.window_length_label.setText(_translate("mainwindow", "Data Point"))
         self.polyorder_label.setText(_translate("mainwindow", "Poly Order"))
-        self.w_cal_button_label.setText(_translate("mainwindow", "Press start to use calculate"))
         self.changedefault_label.setText(_translate("mainwindow", "Save As Default :"))
-        self.cahnge_btn.setText(_translate("mainwindow", "SAVE"))
-            
+        self.roi_default_checkbox.setText(_translate("mainwindow", "ROI"))
+        self.wavelength_parameter_checkbox.setText(_translate("mainwindow", "Wavelength Parameter"))
+        self.cahnge_btn.setText(_translate("mainwindow", "Save"))
+        self.w_cal_button_label_2.setText(_translate("mainwindow", "Calculate Wavelength\nParameter"))
+        self.w_parameter_label.setText(_translate("mainwindow", "Wavelength Parameter"))
+
         self.pixel_graph.setBackground('w')
         self.pixel_graph.setLabel('left', 'Intensity')
         self.pixel_graph.setLabel('bottom', 'Pixel')
@@ -400,6 +571,10 @@ class Ui_mainwindow(object):
         self.Yaxis_max.setText(y_axis_max)
         self.Xaxis_min.setText(x_axis_min)
         self.Xaxis_max.setText(x_axis_max)
+        self.W_Yaxis_min.setText(y_axis_min)
+        self.W_Yaxis_max.setText(y_axis_max)
+        self.W_Xaxis_min.setText(x_axis_min)
+        self.W_Xaxis_max.setText(x_axis_max)
         
         self.a3.setText(a3)
         self.a2.setText(a2)
@@ -459,6 +634,10 @@ class Ui_mainwindow(object):
         self.Xaxis_max.setEnabled(False)
         self.Yaxis_min.setEnabled(False)
         self.Yaxis_max.setEnabled(False)
+        self.W_Xaxis_min.setEnabled(False)
+        self.W_Xaxis_max.setEnabled(False)
+        self.W_Yaxis_min.setEnabled(False)
+        self.W_Yaxis_max.setEnabled(False)
         self.w_cal_button.setEnabled(False)
         
     def start_clicked(self):
@@ -492,14 +671,12 @@ class Ui_mainwindow(object):
             yaxis_max = self.Yaxis_max.text()
             
             self.pixel_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
-            self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
             self.y_axis.setText(_translate("mainwindow", "FIX"))
             self.Yaxis_min.setEnabled(True)
             self.Yaxis_max.setEnabled(True)
             y_mode = 1
         elif y_mode == 1:
             self.pixel_graph.enableAutoRange(axis='y')
-            self.wavelength_graph.enableAutoRange(axis='y')
             self.y_axis.setText(_translate("mainwindow", "AUTO"))
             self.Yaxis_min.setEnabled(False)
             self.Yaxis_max.setEnabled(False)
@@ -513,18 +690,55 @@ class Ui_mainwindow(object):
             xaxis_min = self.Xaxis_min.text()
             xaxis_max = self.Xaxis_max.text()
             self.pixel_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
-            self.wavelength_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
             self.x_axis.setText(_translate("mainwindow", "FIX"))
             self.Xaxis_min.setEnabled(True)
             self.Xaxis_max.setEnabled(True)
             x_mode = 1
         elif x_mode == 1:
             self.pixel_graph.enableAutoRange(axis='x')
-            self.wavelength_graph.enableAutoRange(axis='x')
             self.x_axis.setText(_translate("mainwindow", "AUTO"))
             self.Xaxis_min.setEnabled(False)
             self.Xaxis_max.setEnabled(False)
             x_mode = 0
+       
+    def w_y_axis_clicked(self):
+        global w_y_mode
+        _translate = QtCore.QCoreApplication.translate
+        
+        if w_y_mode == 0: 
+            yaxis_min = self.W_Yaxis_min.text()
+            yaxis_max = self.W_Yaxis_max.text()
+            
+            self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
+            self.w_y_axis.setText(_translate("mainwindow", "FIX"))
+            self.W_Yaxis_min.setEnabled(True)
+            self.W_Yaxis_max.setEnabled(True)
+            w_y_mode = 1
+        elif w_y_mode == 1:
+            self.wavelength_graph.enableAutoRange(axis='y')
+            self.w_y_axis.setText(_translate("mainwindow", "AUTO"))
+            self.W_Yaxis_min.setEnabled(False)
+            self.W_Yaxis_max.setEnabled(False)
+            w_y_mode = 0
+            
+    def w_x_axis_clicked(self):
+        global w_x_mode
+        _translate = QtCore.QCoreApplication.translate
+        
+        if w_x_mode == 0: 
+            xaxis_min = self.W_Xaxis_min.text()
+            xaxis_max = self.W_Xaxis_max.text()
+            self.wavelength_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
+            self.w_x_axis.setText(_translate("mainwindow", "FIX"))
+            self.W_Xaxis_min.setEnabled(True)
+            self.W_Xaxis_max.setEnabled(True)
+            w_x_mode = 1
+        elif w_x_mode == 1:
+            self.wavelength_graph.enableAutoRange(axis='x')
+            self.w_x_axis.setText(_translate("mainwindow", "AUTO"))
+            self.W_Xaxis_min.setEnabled(False)
+            self.W_Xaxis_max.setEnabled(False)
+            w_x_mode = 0
             
     def auto_scaling_clicked(self):
         global auto_mode
@@ -536,22 +750,19 @@ class Ui_mainwindow(object):
         thread2.start()
     
     def auto_roi_clicked(self):
-        global roi_mode
+        global roi_mode, mode, flag
         _translate = QtCore.QCoreApplication.translate
-
-        if roi_mode == 0:
-            self.auto_roi.setText(_translate("mainwindow", "MANUAL"))
-            self.x0.setEnabled(True)
-            self.y0.setEnabled(True)
-            self.x1.setEnabled(True)
-            roi_mode = 1
-        else:
-            self.auto_roi.setText(_translate("mainwindow", "AUTO"))
-            self.x0.setEnabled(False)
-            self.y0.setEnabled(False)
-            self.x1.setEnabled(False)
-            roi_mode = 0
-            
+        roi_mode=0
+        mode = 10
+        self.auto_roi.setText(_translate("mainwindow", "AUTO"))
+        self.x0.setEnabled(False)
+        self.y0.setEnabled(False)
+        self.x1.setEnabled(False)
+        self.auto_roi.setEnabled(False)
+        thread1 = threading.Thread(target = thread_1)
+        thread1.daemon = True
+        thread1.start()
+        
     def w_cal_button_clicked(self):
         c_ui.c_graph.clear()
         x = np.arange(1, len(ncolmean)+1)
@@ -563,6 +774,14 @@ class Ui_mainwindow(object):
         c_ui.c_graph.plot(x, y, pen=pg.mkPen('k'))
         secondwindow.show()
     
+    def w_enter_button_clicked(self):
+        check = wavelength_convert()
+        if check!=1:
+            raise Exception
+        check = self.draw_wavelength_graph_signal()
+        if check!=1:
+            raise Exception
+            
     def change_btn_clicked(self):
         self.statusbar.showMessage("Changing Default")
         
@@ -619,16 +838,45 @@ class Ui_mainwindow(object):
         yaxis_min = self.Yaxis_min.text()
         yaxis_max = self.Yaxis_max.text()
         self.pixel_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
-        self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
         
     def x_axis_fix(self):
         xaxis_min = self.Xaxis_min.text()
         xaxis_max = self.Xaxis_max.text()
         self.pixel_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
+        
+    def w_y_axis_fix(self):
+        yaxis_min = self.W_Yaxis_min.text()
+        yaxis_max = self.W_Yaxis_max.text()
+        self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
+        
+    def w_x_axis_fix(self):
+        xaxis_min = self.W_Xaxis_min.text()
+        xaxis_max = self.W_Xaxis_max.text()
         self.wavelength_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
     
     def roi_change(self):
-        self.update_image_signal()
+        check = crop_image()
+        if check != 1:
+            raise Exception
+        check = number_ofscan()
+        if check != 1:
+            raise Exception
+        check = cal_number_ofscan()
+        if check != 1:
+            raise Exception
+        check = ui.draw_spectrum_graph_signal()
+        if check != 1:
+            raise Exception
+        check = ui.update_image_signal()
+        if check != 1:
+            raise Exception
+        check = wavelength_convert()
+        if check != 1:
+            raise Exception
+        check = ui.draw_wavelength_graph_signal()
+        if check != 1:
+            raise Exception
+        print("ROI DONE")
     
     def auto_scaling_paremeter_change(self):
         _translate = QtCore.QCoreApplication.translate
@@ -703,12 +951,12 @@ class Ui_mainwindow(object):
                 y = signal.savgol_filter(ncolmean, int(self.window_length_edit.text()), int(self.polyorder_edit.text()))
             else:
                 y = ncolmean
-            self.pixel_graph.plot(x, y, pen=pg.mkPen('k'))	# k = black
+            self.pixel_graph.plot(x, y, pen=pg.mkPen('k'))  # k = black
             
             return 1
         except Exception as e:
             print('error:{}'.format(e))
-            return 0	
+            return 0    
     
     def update_wdata(self):
         try:
@@ -718,12 +966,12 @@ class Ui_mainwindow(object):
                 y = signal.savgol_filter(ncolmean, int(self.window_length_edit.text()), int(self.polyorder_edit.text()))
             else:
                 y = ncolmean
-            self.wavelength_graph.plot(x, y, pen=pg.mkPen('k'))	# k = black
+            self.wavelength_graph.plot(x, y, pen=pg.mkPen('k')) # k = black
             
             return 1
         except Exception as e:
             print('error:{}'.format(e))
-            return 0	
+            return 0    
             
     def update_image(self):
         try:
@@ -765,7 +1013,7 @@ class Ui_mainwindow(object):
             return 1
         except Exception as e:
             print('error:{}'.format(e))
-            return 0	
+            return 0    
             
     def draw_wavelength_graph_signal(self):
         try:
@@ -773,7 +1021,7 @@ class Ui_mainwindow(object):
             return 1
         except Exception as e:
             print('error:{}'.format(e))
-            return 0	
+            return 0    
     
     def draw_both_graph_signal(self):
         try:
@@ -812,138 +1060,197 @@ class Ui_w_calibration(object):
     def setupUi(self, w_calibration):
         w_calibration.setObjectName("w_calibration")
         w_calibration.setEnabled(True)
-        w_calibration.resize(560, 500)
+        w_calibration.resize(630, 630)
+        
         self.fill_in_table = QtWidgets.QTableView(w_calibration)
-        self.fill_in_table.setGeometry(QtCore.QRect(10, 10, 190, 315))
+        self.fill_in_table.setGeometry(QtCore.QRect(10, 90, 190, 315))
         self.fill_in_table.setObjectName("fill_in_table")
         self.label = QtWidgets.QLabel(w_calibration)
-        self.label.setGeometry(QtCore.QRect(20, 20, 100, 16))
+        self.label.setGeometry(QtCore.QRect(20, 100, 100, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.label.setFont(font)
         self.label.setObjectName("label")
         self.label_2 = QtWidgets.QLabel(w_calibration)
-        self.label_2.setGeometry(QtCore.QRect(20, 40, 100, 16))
+        self.label_2.setGeometry(QtCore.QRect(20, 120, 100, 16))
         self.label_2.setObjectName("label_2")
         self.label_3 = QtWidgets.QLabel(w_calibration)
-        self.label_3.setGeometry(QtCore.QRect(20, 65, 100, 16))
+        self.label_3.setGeometry(QtCore.QRect(20, 145, 100, 16))
         self.label_3.setObjectName("label_3")
         self.label_4 = QtWidgets.QLabel(w_calibration)
-        self.label_4.setGeometry(QtCore.QRect(20, 90, 100, 16))
+        self.label_4.setGeometry(QtCore.QRect(20, 170, 100, 16))
         self.label_4.setObjectName("label_4")
         self.label_5 = QtWidgets.QLabel(w_calibration)
-        self.label_5.setGeometry(QtCore.QRect(20, 115, 100, 16))
+        self.label_5.setGeometry(QtCore.QRect(20, 195, 100, 16))
         self.label_5.setObjectName("label_5")
         self.label_6 = QtWidgets.QLabel(w_calibration)
-        self.label_6.setGeometry(QtCore.QRect(20, 140, 100, 16))
+        self.label_6.setGeometry(QtCore.QRect(20, 220, 100, 16))
         self.label_6.setObjectName("label_6")
         self.label_7 = QtWidgets.QLabel(w_calibration)
-        self.label_7.setGeometry(QtCore.QRect(20, 165, 100, 16))
+        self.label_7.setGeometry(QtCore.QRect(20, 245, 100, 16))
         self.label_7.setObjectName("label_7")
         self.label_8 = QtWidgets.QLabel(w_calibration)
-        self.label_8.setGeometry(QtCore.QRect(20, 190, 100, 16))
+        self.label_8.setGeometry(QtCore.QRect(20, 270, 100, 16))
         self.label_8.setObjectName("label_8")
         self.label_9 = QtWidgets.QLabel(w_calibration)
-        self.label_9.setGeometry(QtCore.QRect(70, 20, 100, 16))
+        self.label_9.setGeometry(QtCore.QRect(70, 100, 100, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.label_9.setFont(font)
         self.label_9.setObjectName("label_9")
         self.label_10 = QtWidgets.QLabel(w_calibration)
-        self.label_10.setGeometry(QtCore.QRect(20, 215, 100, 16))
+        self.label_10.setGeometry(QtCore.QRect(20, 295, 100, 16))
+        self.label_10.setObjectName("label_10")
         self.label_11 = QtWidgets.QLabel(w_calibration)
-        self.label_11.setGeometry(QtCore.QRect(20, 240, 100, 16))
+        self.label_11.setGeometry(QtCore.QRect(20, 320, 100, 16))
+        self.label_11.setObjectName("label_11")
         self.label_12 = QtWidgets.QLabel(w_calibration)
-        self.label_12.setGeometry(QtCore.QRect(20, 265, 100, 16))
+        self.label_12.setGeometry(QtCore.QRect(20, 345, 100, 16))
+        self.label_12.setObjectName("label_12")
         
         self.lambda1 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda1.setGeometry(QtCore.QRect(60, 40, 70, 20))
+        self.lambda1.setGeometry(QtCore.QRect(60, 120, 70, 20))
+        self.lambda1.setObjectName("lambda1")
         self.lambda2 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda2.setGeometry(QtCore.QRect(60, 65, 70, 20))
+        self.lambda2.setGeometry(QtCore.QRect(60, 142, 70, 20))
+        self.lambda2.setObjectName("lambda2")
         self.lambda3 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda3.setGeometry(QtCore.QRect(60, 90, 70, 20))
+        self.lambda3.setGeometry(QtCore.QRect(60, 170, 70, 20))
+        self.lambda3.setObjectName("lambda3")
         self.lambda4 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda4.setGeometry(QtCore.QRect(60, 115, 70, 20))
+        self.lambda4.setGeometry(QtCore.QRect(60, 195, 70, 20))
+        self.lambda4.setObjectName("lambda4")
         self.lambda5 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda5.setGeometry(QtCore.QRect(60, 140, 70, 20))
+        self.lambda5.setGeometry(QtCore.QRect(60, 220, 70, 20))
+        self.lambda5.setObjectName("lambda5")
         self.lambda6 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda6.setGeometry(QtCore.QRect(60, 165, 70, 20))
+        self.lambda6.setGeometry(QtCore.QRect(60, 245, 70, 20))
+        self.lambda6.setObjectName("lambda6")
         self.lambda7 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda7.setGeometry(QtCore.QRect(60, 190, 70, 20))
+        self.lambda7.setGeometry(QtCore.QRect(60, 270, 70, 20))
+        self.lambda7.setObjectName("lambda7")
         self.lambda8 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda8.setGeometry(QtCore.QRect(60, 215, 70, 20))
+        self.lambda8.setGeometry(QtCore.QRect(60, 295, 70, 20))
+        self.lambda8.setObjectName("lambda8")
         self.lambda9 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda9.setGeometry(QtCore.QRect(60, 240, 70, 20))
+        self.lambda9.setGeometry(QtCore.QRect(60, 320, 70, 20))
+        self.lambda9.setObjectName("lambda9")
         self.lambda10 = QtWidgets.QLineEdit(w_calibration)
-        self.lambda10.setGeometry(QtCore.QRect(60, 265, 70, 20))
+        self.lambda10.setGeometry(QtCore.QRect(60, 345, 70, 20))
+        self.lambda10.setObjectName("lambda10")
         
         self.pixel1 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel1.setGeometry(QtCore.QRect(140, 40, 50, 20))
+        self.pixel1.setGeometry(QtCore.QRect(140, 120, 50, 20))
         self.pixel1.setObjectName("pixel1")
         self.pixel2 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel2.setGeometry(QtCore.QRect(140, 65, 50, 20))
+        self.pixel2.setGeometry(QtCore.QRect(140, 145, 50, 20))
         self.pixel2.setObjectName("pixel2")
         self.pixel3 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel3.setGeometry(QtCore.QRect(140, 90, 50, 20))
+        self.pixel3.setGeometry(QtCore.QRect(140, 170, 50, 20))
         self.pixel3.setObjectName("pixel3")
         self.pixel4 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel4.setGeometry(QtCore.QRect(140, 115, 50, 20))
+        self.pixel4.setGeometry(QtCore.QRect(140, 195, 50, 20))
         self.pixel4.setObjectName("pixel4")
         self.pixel5 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel5.setGeometry(QtCore.QRect(140, 140, 50, 20))
+        self.pixel5.setGeometry(QtCore.QRect(140, 220, 50, 20))
         self.pixel5.setObjectName("pixel5")
         self.pixel6 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel6.setGeometry(QtCore.QRect(140, 165, 50, 20))
+        self.pixel6.setGeometry(QtCore.QRect(140, 245, 50, 20))
         self.pixel6.setObjectName("pixel6")
         self.pixel7 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel7.setGeometry(QtCore.QRect(140, 190, 50, 20))
+        self.pixel7.setGeometry(QtCore.QRect(140, 270, 50, 20))
         self.pixel7.setObjectName("pixel7")
         self.pixel8 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel8.setGeometry(QtCore.QRect(140, 215, 50, 20))
+        self.pixel8.setGeometry(QtCore.QRect(140, 295, 50, 20))
+        self.pixel8.setObjectName("pixel8")
         self.pixel9 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel9.setGeometry(QtCore.QRect(140, 230, 50, 20))
+        self.pixel9.setGeometry(QtCore.QRect(140, 320, 50, 20))
+        self.pixel9.setObjectName("pixel9")
         self.pixel10 = QtWidgets.QLineEdit(w_calibration)
-        self.pixel10.setGeometry(QtCore.QRect(140, 265, 50, 20))
+        self.pixel10.setGeometry(QtCore.QRect(140, 345, 50, 20))
+        self.pixel10.setObjectName("pixel10")
         
         self.CalButton = QtWidgets.QPushButton(w_calibration)
-        self.CalButton.setGeometry(QtCore.QRect(104, 290, 90, 30))
+        self.CalButton.setGeometry(QtCore.QRect(104, 370, 90, 30))
+        self.CalButton.setObjectName("CalButton")
+        
         self.tableView = QtWidgets.QTableView(w_calibration)
-        self.tableView.setGeometry(QtCore.QRect(10, 330, 130, 100))
+        self.tableView.setGeometry(QtCore.QRect(10, 410, 190, 100))
         self.tableView.setObjectName("tableView")
         self.label_17 = QtWidgets.QLabel(w_calibration)
-        self.label_17.setGeometry(QtCore.QRect(20, 335, 20, 15))
+        self.label_17.setGeometry(QtCore.QRect(20, 415, 20, 15))
         self.label_17.setObjectName("label_17")
         self.label_18 = QtWidgets.QLabel(w_calibration)
-        self.label_18.setGeometry(QtCore.QRect(20, 360, 20, 15))
+        self.label_18.setGeometry(QtCore.QRect(20, 440, 20, 15))
         self.label_18.setObjectName("label_18")
         self.label_19 = QtWidgets.QLabel(w_calibration)
-        self.label_19.setGeometry(QtCore.QRect(20, 385, 20, 15))
+        self.label_19.setGeometry(QtCore.QRect(20, 465, 20, 15))
         self.label_19.setObjectName("label_19")
         self.label_20 = QtWidgets.QLabel(w_calibration)
-        self.label_20.setGeometry(QtCore.QRect(20, 410, 20, 15))
+        self.label_20.setGeometry(QtCore.QRect(20, 490, 20, 15))
         self.label_20.setObjectName("label_20")
         self.a3_label = QtWidgets.QLabel(w_calibration)
-        self.a3_label.setGeometry(QtCore.QRect(50, 335, 100, 15))
+        self.a3_label.setGeometry(QtCore.QRect(50, 415, 100, 15))
         self.a3_label.setObjectName("a3_label")
-        self.a2_label = QtWidgets.QLabel(w_calibration)
-        self.a2_label.setGeometry(QtCore.QRect(50, 360, 100, 15))
-        self.a2_label.setObjectName("a2_label")
-        self.a1_label = QtWidgets.QLabel(w_calibration)
-        self.a1_label.setGeometry(QtCore.QRect(50, 385, 100, 15))
-        self.a1_label.setObjectName("a1_label")
         self.a0_label = QtWidgets.QLabel(w_calibration)
-        self.a0_label.setGeometry(QtCore.QRect(50, 410, 100, 15))
+        self.a0_label.setGeometry(QtCore.QRect(50, 490, 100, 15))
         self.a0_label.setObjectName("a0_label")
+        self.a1_label = QtWidgets.QLabel(w_calibration)
+        self.a1_label.setGeometry(QtCore.QRect(50, 465, 100, 15))
+        self.a1_label.setObjectName("a1_label")
+        self.a2_label = QtWidgets.QLabel(w_calibration)
+        self.a2_label.setGeometry(QtCore.QRect(50, 440, 100, 15))
+        self.a2_label.setObjectName("a2_label")
         
         self.c_graph = pg.PlotWidget(w_calibration)
-        self.c_graph.setGeometry(QtCore.QRect(220, 10, 300, 200))
+        self.c_graph.setGeometry(QtCore.QRect(220, 10, 400, 300))
         self.c_wavelength_graph = pg.PlotWidget(w_calibration)
-        self.c_wavelength_graph.setGeometry(QtCore.QRect(220, 220, 300, 200))
+        self.c_wavelength_graph.setGeometry(QtCore.QRect(220, 320, 400, 300))
         
         self.pixel_label = QtWidgets.QLabel(w_calibration)
-        self.pixel_label.setGeometry(QtCore.QRect(140, 20, 100, 16))
+        self.pixel_label.setGeometry(QtCore.QRect(140, 100, 100, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.pixel_label.setFont(font)
+        self.pixel_label.setObjectName("pixel_label")
         
-        self.ar_autopeak_checkbox = QtWidgets.QCheckBox("Hg-Ar Find Peaks   ",w_calibration)
-        self.ar_autopeak_checkbox.setGeometry(QtCore.QRect(10, 440, 140, 16))
-        self.ar_autopeak_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)       
-        self.ar_autofindpeak_btn = QtWidgets.QPushButton(w_calibration)
-        self.ar_autofindpeak_btn.setGeometry(QtCore.QRect(10, 460, 90, 30))
+        self.tableView_2 = QtWidgets.QTableView(w_calibration)
+        self.tableView_2.setGeometry(QtCore.QRect(10, 10, 190, 71))
+        self.tableView_2.setObjectName("tableView_2")
+        self.ar_autopeak_checkbox = QtWidgets.QCheckBox(w_calibration)
+        self.ar_autopeak_checkbox.setGeometry(QtCore.QRect(20, 50, 140, 16))
+        self.ar_autopeak_checkbox.setObjectName("ar_autopeak_checkbox")
         self.autopeak_label = QtWidgets.QLabel(w_calibration)
-        self.autopeak_label.setGeometry(QtCore.QRect(160, 440, 200, 16))
+        self.autopeak_label.setGeometry(QtCore.QRect(20, 20, 200, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.autopeak_label.setFont(font)
+        self.autopeak_label.setObjectName("autopeak_label")
+        
+        self.tableView_3 = QtWidgets.QTableView(w_calibration)
+        self.tableView_3.setGeometry(QtCore.QRect(10, 520, 190, 100))
+        self.tableView_3.setObjectName("tableView_3")
+        self.model_comboBox = QtWidgets.QComboBox(w_calibration)
+        self.model_comboBox.setGeometry(QtCore.QRect(70, 550, 121, 22))
+        self.model_comboBox.setObjectName("model_comboBox")
+        self.model_comboBox.addItem("")
+        self.model_label = QtWidgets.QLabel(w_calibration)
+        self.model_label.setGeometry(QtCore.QRect(20, 555, 100, 16))
+        self.model_label.setObjectName("model_label")
+        self.model_label_2 = QtWidgets.QLabel(w_calibration)
+        self.model_label_2.setGeometry(QtCore.QRect(20, 530, 150, 16))
+        font = QtGui.QFont()
+        font.setBold(True)
+        font.setWeight(75)
+        self.model_label_2.setFont(font)
+        self.model_label_2.setObjectName("model_label_2")
+        self.ar_autofindpeak_btn = QtWidgets.QPushButton(w_calibration)
+        self.ar_autofindpeak_btn.setGeometry(QtCore.QRect(20, 580, 90, 30))
+        self.ar_autofindpeak_btn.setObjectName("ar_autofindpeak_btn")
         
         self.retranslateUi(w_calibration)
         QtCore.QMetaObject.connectSlotsByName(w_calibration)
@@ -957,7 +1264,7 @@ class Ui_w_calibration(object):
         
     def retranslateUi(self, w_calibration):
         _translate = QtCore.QCoreApplication.translate
-        w_calibration.setWindowTitle(_translate("w_calibration", "Wavelength Calibration"))
+        w_calibration.setWindowTitle(_translate("w_calibration", "MainWindow"))
         self.label.setText(_translate("w_calibration", "NO."))
         self.label_2.setText(_translate("w_calibration", "1"))
         self.label_3.setText(_translate("w_calibration", "2"))
@@ -967,43 +1274,46 @@ class Ui_w_calibration(object):
         self.label_7.setText(_translate("w_calibration", "6"))
         self.label_8.setText(_translate("w_calibration", "7"))
         self.label_9.setText(_translate("w_calibration", "Lambda"))
+        self.label_10.setText(_translate("w_calibration", "8"))
+        self.label_11.setText(_translate("w_calibration", "9"))
+        self.label_12.setText(_translate("w_calibration", "10"))
         self.CalButton.setText(_translate("w_calibration", "CALCULATE"))
         self.label_17.setText(_translate("w_calibration", "a3"))
         self.label_18.setText(_translate("w_calibration", "a2"))
         self.label_19.setText(_translate("w_calibration", "a1"))
         self.label_20.setText(_translate("w_calibration", "a0"))
         self.a3_label.setText(_translate("w_calibration", "---"))
-        self.a2_label.setText(_translate("w_calibration", "---"))
-        self.a1_label.setText(_translate("w_calibration", "---"))
         self.a0_label.setText(_translate("w_calibration", "---"))
+        self.a1_label.setText(_translate("w_calibration", "---"))
+        self.a2_label.setText(_translate("w_calibration", "---"))
         self.pixel_label.setText(_translate("w_calibration", "Pixel"))
-        self.label_10.setText(_translate("w_calibration", "8"))
-        self.label_11.setText(_translate("w_calibration", "9"))
-        self.label_12.setText(_translate("w_calibration", "10"))
+        self.ar_autopeak_checkbox.setText(_translate("w_calibration", "Hg-Ar Peaks"))
         self.ar_autofindpeak_btn.setText(_translate("w_calibration", "AUTO FIND"))
-        self.autopeak_label.setText(_translate("w_calibration", "( Defaut Wavelengths )"))
+        self.autopeak_label.setText(_translate("w_calibration", " Defaut Wavelengths"))
+        self.model_label.setText(_translate("w_calibration", "Model"))
+        self.model_label_2.setText(_translate("w_calibration", "Auto Find Peak"))
         
-        self.lambda1.setText(config['calibration_peak']['lamdba1'])
-        self.lambda2.setText(config['calibration_peak']['lamdba2'])
-        self.lambda3.setText(config['calibration_peak']['lamdba3'])
-        self.lambda4.setText(config['calibration_peak']['lamdba4'])
-        self.lambda5.setText(config['calibration_peak']['lamdba5'])
-        self.lambda6.setText(config['calibration_peak']['lamdba6'])
-        self.lambda7.setText(config['calibration_peak']['lamdba7'])
-        self.lambda8.setText(config['calibration_peak']['lamdba8'])
-        self.lambda9.setText(config['calibration_peak']['lamdba9'])
-        self.lambda10.setText(config['calibration_peak']['lamdba10'])
+        self.lambda1.setText('0')
+        self.lambda2.setText('0')
+        self.lambda3.setText('0')
+        self.lambda4.setText('0')
+        self.lambda5.setText('0')
+        self.lambda6.setText('0')
+        self.lambda7.setText('0')
+        self.lambda8.setText('0')
+        self.lambda9.setText('0')
+        self.lambda10.setText('0')
         
-        self.pixel1.setText(config['calibration_peak']['pixel1'])
-        self.pixel2.setText(config['calibration_peak']['pixel2'])
-        self.pixel3.setText(config['calibration_peak']['pixel3'])
-        self.pixel4.setText(config['calibration_peak']['pixel4'])
-        self.pixel5.setText(config['calibration_peak']['pixel5'])
-        self.pixel6.setText(config['calibration_peak']['pixel6'])
-        self.pixel7.setText(config['calibration_peak']['pixel7'])
-        self.pixel8.setText(config['calibration_peak']['pixel8'])
-        self.pixel9.setText(config['calibration_peak']['pixel9'])
-        self.pixel10.setText(config['calibration_peak']['pixel10'])
+        self.pixel1.setText('0')
+        self.pixel2.setText('0')
+        self.pixel3.setText('0')
+        self.pixel4.setText('0')
+        self.pixel5.setText('0')
+        self.pixel6.setText('0')
+        self.pixel7.setText('0')
+        self.pixel8.setText('0')
+        self.pixel9.setText('0')
+        self.pixel10.setText('0')
         
         self.lambda1.setValidator(QtGui.QDoubleValidator())
         self.lambda2.setValidator(QtGui.QDoubleValidator())
@@ -1165,7 +1475,7 @@ class Ui_w_calibration(object):
                 y = signal.savgol_filter(ncolmean, int(ui.window_length_edit.text()), int(ui.polyorder_edit.text()))
             else:
                 y = ncolmean
-            self.c_wavelength_graph.plot(x, y, pen=pg.mkPen('k'))	
+            self.c_wavelength_graph.plot(x, y, pen=pg.mkPen('k'))   
             return 1
         except Exception as e:
             print('error:{}'.format(e))
@@ -1173,6 +1483,8 @@ class Ui_w_calibration(object):
     
     def ar_autopeak_checkbox_check(self):
         if self.ar_autopeak_checkbox.isChecked() == True:
+            _translate = QtCore.QCoreApplication.translate
+            self.model_comboBox.setItemText(0, _translate("w_calibration", "Ocean Optics HG-1"))
             self.ar_autofindpeak_btn.setEnabled(True)
             self.lambda1.setEnabled(False)
             self.lambda2.setEnabled(False)
@@ -1207,6 +1519,8 @@ class Ui_w_calibration(object):
             self.lambda9.setText(config['calibration_peak']['lamdba9'])
             self.lambda10.setText(config['calibration_peak']['lamdba10'])
         else:
+            _translate = QtCore.QCoreApplication.translate
+            self.model_comboBox.setItemText(0, _translate("w_calibration", " "))
             self.ar_autofindpeak_btn.setEnabled(False)
             self.lambda1.setEnabled(True)
             self.lambda2.setEnabled(True)
@@ -1259,7 +1573,7 @@ def takephoto():
         return 1
     except Exception as e:
         print('error:{}'.format(e))
-        return 0	
+        return 0    
         
 def crop_image():
     global data, max_value
@@ -1282,10 +1596,10 @@ def crop_image():
         
         a = np.argmax(data)
         max_value = data[a]
-        return 1		
+        return 1        
     except Exception as e:
         print('error:{}'.format(e))
-        return None	
+        return None 
 
 def sum_image():
     global new_y0
@@ -1326,6 +1640,9 @@ def wavelength_convert():
         
 def checkluminous():
     try:
+        sh = int(ui.shutter_edit.text())
+        if(sh>=1000000):
+            raise Exception
         if (max_value >= I_max):
             return '0'
         elif (max_value > I_thr_top):
@@ -1428,7 +1745,7 @@ def save_data():
         return 1
     except Exception as e:
         print('error:{}'.format(e))
-        return 0	
+        return 0    
 
 def find_hgar_dividerpoint():
     try:
@@ -1551,7 +1868,7 @@ def find_ar_peaks():
         return 0
     
 def thread_1():
-    global mode, image_mode, numb_ofscan
+    global mode, image_mode, numb_ofscan, roi_mode
     scan_time = 0
     first_scan = 1
     
@@ -1580,7 +1897,7 @@ def thread_1():
                 else:
                     mode = 30
             else:
-                mode = 30			
+                mode = 30           
         elif mode == 30:
             check = crop_image()
             if check == 1:
@@ -1640,6 +1957,14 @@ def thread_1():
             print("Main Function Error")
             ui.statusbar.showMessage("CAPTURE IMAGE Error")
             raise Exception
+    if(roi_mode == 0):
+        _translate = QtCore.QCoreApplication.translate
+        roi_mode = 1
+        ui.x0.setEnabled(True)
+        ui.y0.setEnabled(True)
+        ui.x1.setEnabled(True)
+        ui.auto_roi.setEnabled(True)
+        ui.auto_roi.setText(_translate("mainwindow", "MANUAL"))
     print("Main Function Complete")
     ui.statusbar.showMessage("CAPTURE IMAGE COMPLETE")
     
@@ -1719,12 +2044,30 @@ def thread_2():
             else:
                 auto_mode = 999
         elif auto_mode == 70:
-            check = ui.draw_spectrum_graph_signal()
+            check = numb_ofscan()
             if check == 1:
                 auto_mode = 80
             else:
                 auto_mode = 999
         elif auto_mode == 80:
+            check = cal_number_ofscan()
+            if check == 1:
+                auto_mode = 90
+            else:
+                auto_mode = 999
+        elif auto_mode == 90:
+            check = save_data()
+            if check == 1:
+                auto_mode = 100
+            else:
+                auto_mode = 999
+        elif auto_mode == 100:
+            check = ui.draw_spectrum_graph_signal()
+            if check == 1:
+                auto_mode = 110
+            else:
+                auto_mode = 999
+        elif auto_mode == 110:
             check = ui.update_image_signal()
             if check == 1:
                 break
@@ -1773,11 +2116,11 @@ def thread_3():
         return 0
          
 if __name__ == "__main__":
-    try:		
+    try:        
         app = QtWidgets.QApplication(sys.argv)
         mainwindow = QtWidgets.QMainWindow()
         secondwindow = QtWidgets.QMainWindow()
-        signalComm = SignalCommunication()	
+        signalComm = SignalCommunication()  
         ui = Ui_mainwindow()
         c_ui = Ui_w_calibration()
         ui.setupUi(mainwindow)
