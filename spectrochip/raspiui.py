@@ -1,3 +1,5 @@
+version = "V1.1"
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 from scipy import signal
 import numpy as np
@@ -489,7 +491,7 @@ class Ui_mainwindow(object):
         global I_max, I_thr_percentage, I_thr_tolerance, I_thr, I_thr_top, I_thr_bottom
         
         _translate = QtCore.QCoreApplication.translate
-        mainwindow.setWindowTitle(_translate("mainwindow", "Spectrochip V1"))
+        mainwindow.setWindowTitle(_translate("mainwindow", "Spectrochip "+version))
         self.label.setText(_translate("mainwindow", "Image Format"))
         self.format_box.setItemText(0, _translate("mainwindow", "BMP"))
         self.format_box.setItemText(1, _translate("mainwindow", "JPG"))
@@ -827,7 +829,7 @@ class Ui_mainwindow(object):
                 y = signal.savgol_filter(ncolmean, int(self.window_length_edit.text()), int(self.polyorder_edit.text()))
             else:
                 y = ncolmean
-            c_ui.c_graph.plot(x, y)
+            c_ui.c_graph.plot(x, y, pen=pg.mkPen('k'))
             
             if c_draw_wgraph == 1:
                 check = c_ui.w_draw_wgraph()
@@ -1264,7 +1266,7 @@ class Ui_w_calibration(object):
         
     def retranslateUi(self, w_calibration):
         _translate = QtCore.QCoreApplication.translate
-        w_calibration.setWindowTitle(_translate("w_calibration", "Wavelength Calibration V1"))
+        w_calibration.setWindowTitle(_translate("w_calibration", "Wavelength Calibration "+version))
         self.label.setText(_translate("w_calibration", "NO."))
         self.label_2.setText(_translate("w_calibration", "1"))
         self.label_3.setText(_translate("w_calibration", "2"))
