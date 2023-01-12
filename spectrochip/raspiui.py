@@ -213,7 +213,7 @@ class Ui_mainwindow(object):
         self.w_parameter_list.setGeometry(QtCore.QRect(660, 265, 405, 220))
         self.w_parameter_list.setObjectName("w_parameter_list")
         self.w_parameter_label = QtWidgets.QLabel(self.centralwidget)
-        self.w_parameter_label.setGeometry(QtCore.QRect(670, 270, 150, 16))
+        self.w_parameter_label.setGeometry(QtCore.QRect(670, 270, 220, 16))
         font = QtGui.QFont()
         font.setBold(True)
         font.setWeight(75)
@@ -546,7 +546,7 @@ class Ui_mainwindow(object):
         self.wavelength_parameter_checkbox.setText(_translate("mainwindow", "Wavelength Parameter"))
         self.cahnge_btn.setText(_translate("mainwindow", "Save"))
         self.w_cal_button_label_2.setText(_translate("mainwindow", "Calculate Wavelength\nParameter"))
-        self.w_parameter_label.setText(_translate("mainwindow", "Wavelength Parameter"))
+        self.w_parameter_label.setText(_translate("mainwindow", "Wavelength Calculation Parameters"))
 
         self.pixel_graph.setBackground('w')
         self.pixel_graph.setLabel('left', 'Intensity')
