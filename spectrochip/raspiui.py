@@ -1,4 +1,4 @@
-version = "V2"
+version = "V3"
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 from scipy import signal
@@ -444,6 +444,34 @@ class Ui_mainwindow(object):
 		self.cahnge_btn.setGeometry(QtCore.QRect(1000, 80, 75, 25))
 		self.cahnge_btn.setObjectName("cahnge_btn")
 		
+		self.save_list = QtWidgets.QListView(self.centralwidget)
+		self.save_list.setGeometry(QtCore.QRect(1090, 265, 120, 160))
+		self.save_list.setObjectName("save_list")
+		self.save_label = QtWidgets.QLabel(self.centralwidget)
+		self.save_label.setGeometry(QtCore.QRect(1100, 270, 150, 16))
+		font = QtGui.QFont()
+		font.setBold(True)
+		font.setWeight(75)
+		self.save_label.setFont(font)
+		self.save_label.setObjectName("save_label")
+		self.save_rd_data_checkbox = QtWidgets.QCheckBox(self.centralwidget)
+		self.save_rd_data_checkbox.setGeometry(QtCore.QRect(1100, 290, 95, 16))
+		self.save_rd_data_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)
+		self.save_rd_data_checkbox.setObjectName("save_rd_data_checkbox")
+		self.save_sg_data_checkbox = QtWidgets.QCheckBox(self.centralwidget)
+		self.save_sg_data_checkbox.setGeometry(QtCore.QRect(1100, 310, 95, 16))
+		self.save_sg_data_checkbox.setLayoutDirection(QtCore.Qt.LeftToRight)
+		self.save_sg_data_checkbox.setObjectName("save_sg_data_checkbox")
+		self.save_file_label = QtWidgets.QLabel(self.centralwidget)
+		self.save_file_label.setGeometry(QtCore.QRect(1100, 330, 150, 16))
+		self.save_file_label.setObjectName("save_file_label")
+		self.save_file_edit = QtWidgets.QLineEdit(self.centralwidget)
+		self.save_file_edit.setGeometry(QtCore.QRect(1100, 350, 104, 31))
+		self.save_file_edit.setObjectName("save_file_edit")
+		self.save_function_button = QtWidgets.QPushButton(self.centralwidget)
+		self.save_function_button.setGeometry(QtCore.QRect(1100, 390, 75, 25))
+		self.save_function_button.setObjectName("save_function_button")
+		
 		self.statusbar.showMessage("INITIALING")
 		self.retranslateUi(mainwindow)
 		QtCore.QMetaObject.connectSlotsByName(mainwindow)
@@ -459,9 +487,12 @@ class Ui_mainwindow(object):
 		self.w_cal_button.clicked.connect(self.w_cal_button_clicked)	
 		self.cahnge_btn.clicked.connect(self.change_btn_clicked)	
 		self.w_enter_button.clicked.connect(self.w_enter_button_clicked)	
+		self.save_function_button.clicked.connect(self.save_function_button_clicked)	
 		
 		self.continue_checkbox.toggled.connect(self.continue_checkbox_check)
 		self.sg_filter_checkbox.toggled.connect(self.sg_filter_checkbox_check)
+		self.save_rd_data_checkbox.toggled.connect(self.save_data_check)
+		self.save_sg_data_checkbox.toggled.connect(self.save_data_check)
 			
 		self.Xaxis_min.textChanged[str].connect(self.x_axis_fix)
 		self.Xaxis_max.textChanged[str].connect(self.x_axis_fix)
@@ -554,6 +585,11 @@ class Ui_mainwindow(object):
 		self.cahnge_btn.setText(_translate("mainwindow", "Save"))
 		self.w_cal_button_label_2.setText(_translate("mainwindow", "Calculate Wavelength\nParameter"))
 		self.w_parameter_label.setText(_translate("mainwindow", "Wavelength Calculation Parameters"))
+		self.save_label.setText(_translate("mainwindow", "Save Function"))
+		self.save_rd_data_checkbox.setText(_translate("mainwindow", "Raw Data"))
+		self.save_sg_data_checkbox.setText(_translate("mainwindow", "SG Data"))
+		self.save_file_label.setText(_translate("mainwindow", "Save File Name"))
+		self.save_function_button.setText(_translate("mainwindow", "Save"))
 
 		self.pixel_graph.setBackground('w')
 		self.pixel_graph.setLabel('left', 'Intensity')
@@ -647,6 +683,8 @@ class Ui_mainwindow(object):
 		self.W_Yaxis_min.setEnabled(False)
 		self.W_Yaxis_max.setEnabled(False)
 		self.w_cal_button.setEnabled(False)
+		self.save_file_edit.setEnabled(False)
+		self.save_function_button.setEnabled(False)
 		
 	def start_clicked(self):
 		global mode, flag
@@ -825,6 +863,42 @@ class Ui_mainwindow(object):
 			self.statusbar.showMessage("Default change complete")
 		else:
 			self.statusbar.showMessage("Please tick 1 or both checkbox to change default")
+	
+	def save_function_button_clicked(self):
+		try:
+			self.statusbar.showMessage("Saving")
+			if self.save_rd_data_checkbox.isChecked():
+				path = self.save_file_edit.text() + "_raw.txt"
+				s = ncolmean
+				check = self.helper_save_funtion(path, s)
+				if check != 1:
+					raise Exception
+					
+			if self.save_sg_data_checkbox.isChecked():
+				path = self.save_file_edit.text() + "_sg.txt"
+				s = signal.savgol_filter(ncolmean, int(self.window_length_edit.text()), int(self.polyorder_edit.text()))
+				check = self.helper_save_funtion(path, s)
+				if check != 1:
+					raise Exception
+					
+			print("Save Complete")
+			self.statusbar.showMessage("Save Complete")
+			
+		except Exception as e:
+			print('error:{}'.format(e))
+			self.statusbar.showMessage("Save Error")			
+	
+	def helper_save_funtion(self, path, data):
+		try:
+			f = open(path, 'w')
+			for i in data:
+				f.write(str(i) + "\n")
+			f.close()
+			
+			return 1
+		except Exception as e:
+			print('error:{}'.format(e))
+			return 0
 			
 	def continue_checkbox_check(self):
 		global flag
@@ -850,7 +924,15 @@ class Ui_mainwindow(object):
 				check = c_ui.w_draw_wgraph()
 				if check == 0:
 					raise Exception
-							
+	
+	def save_data_check(self):
+		if self.save_rd_data_checkbox.isChecked() or self.save_sg_data_checkbox.isChecked():
+			self.save_file_edit.setEnabled(True)
+			self.save_function_button.setEnabled(True)
+		elif self.save_rd_data_checkbox.isChecked() == False and self.save_sg_data_checkbox.isChecked() == False :
+			self.save_file_edit.setEnabled(False)
+			self.save_function_button.setEnabled(False)
+			
 	def y_axis_fix(self):
 		yaxis_min = self.Yaxis_min.text()
 		yaxis_max = self.Yaxis_max.text()
@@ -1742,27 +1824,6 @@ def cal_number_ofscan():
 	except Exception as e:
 		print('error:{}'.format(e))
 		return 0
-			
-def save_data():
-	try:
-		path = 'raw_data.txt'
-		path1 = 'sg_data.txt'
-		
-		f = open(path, 'w')
-		f1 = open(path1, 'w')
-		
-		y = signal.savgol_filter(ncolmean, int(ui.window_length_edit.text()), int(ui.polyorder_edit.text()))
-		for i in ncolmean:
-			f.write(str(i)+"\n")
-			f1.write(str(i)+"\n")
-		f.close()
-		f1.close()
-		print("Save Complete")
-		
-		return 1
-	except Exception as e:
-		print('error:{}'.format(e))
-		return 0	
 
 def find_hgar_dividerpoint():
 	try:
@@ -1884,7 +1945,7 @@ def find_ar_peaks():
 		print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
 		return 0
 	
-def thread_1():
+def thread_1(): #main function
 	global mode, image_mode, numb_ofscan, roi_mode
 	scan_time = 0
 	first_scan = 1
@@ -1935,12 +1996,6 @@ def thread_1():
 		elif mode == 32:
 			check = cal_number_ofscan()
 			if check == 1:
-				mode = 35
-			else:
-				mode = 999
-		elif mode == 35:
-			check = save_data()
-			if check == 1:
 				mode = 40
 			else:
 				mode = 999
@@ -1983,7 +2038,7 @@ def thread_1():
 	print("Main Function Complete")
 	ui.statusbar.showMessage("CAPTURE IMAGE COMPLETE")
 	
-def thread_2():
+def thread_2(): #auto scaling
 	global auto_mode
 	t_times = 0
 	first_scan = 1
@@ -2067,12 +2122,6 @@ def thread_2():
 		elif auto_mode == 80:
 			check = cal_number_ofscan()
 			if check == 1:
-				auto_mode = 90
-			else:
-				auto_mode = 999
-		elif auto_mode == 90:
-			check = save_data()
-			if check == 1:
 				auto_mode = 100
 			else:
 				auto_mode = 999
@@ -2095,7 +2144,7 @@ def thread_2():
 	print('Auto Scaling Complete')
 	ui.statusbar.showMessage("AUTO SCALING Complete")
 
-def thread_3():
+def thread_3(): #auto find peak
 	ui.statusbar.showMessage("FINGING PEAK")
 	try: 
 		global hg_peak, hg_peaks, ar_peak, ar_peaks
