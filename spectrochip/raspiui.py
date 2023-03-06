@@ -1,10 +1,10 @@
-version = "V4"
+version = "V4.3"
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 from scipy import signal
 import numpy as np
 import pyqtgraph as pg
-import sys, configparser, cv2, threading, subprocess, time
+import sys, configparser, cv2, threading, subprocess, time, os
 
 np.set_printoptions(threshold = sys.maxsize)
 
@@ -2218,9 +2218,19 @@ def thread_3(): #auto find peak
         print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
         ui.statusbar.showMessage("AUTO FIND PEAK ERROR")
         return 0
-         
+
+def check_dir():
+    try:
+        filename = "./ttest/test.txt"
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        
+    except Exception as e:
+        print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+        raise    
+                 
 if __name__ == "__main__":
-    try:        
+    try:       
+        check_dir()
         app = QtWidgets.QApplication(sys.argv)
         mainwindow = QtWidgets.QMainWindow()
         secondwindow = QtWidgets.QMainWindow()
