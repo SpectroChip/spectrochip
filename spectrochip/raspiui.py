@@ -1,10 +1,13 @@
-version = "V4.3"
+print("Starting up...")
+version = "V4.4"
 
+print("Importing...")
 from PyQt5 import QtCore, QtGui, QtWidgets
 from scipy import signal
 import numpy as np
 import pyqtgraph as pg
 import sys, configparser, cv2, threading, subprocess, time, os
+print("Import Complete")
 
 np.set_printoptions(threshold = sys.maxsize)
 
@@ -56,6 +59,7 @@ I_thr_bottom = 0
 mode = 0
 auto_mode = 0
 roi_mode = 1
+flag = 0
 
 max_value = 0
 goal_st = 0
@@ -87,6 +91,7 @@ class SignalCommunication(QtCore.QObject):
 
 class Ui_mainwindow(object):
     def setupUi(self, mainwindow):
+        print("Initialing...")
         mainwindow.setObjectName("mainwindow")
         mainwindow.resize(1310, 965)
         self.centralwidget = QtWidgets.QWidget(mainwindow)
@@ -2230,6 +2235,7 @@ def check_dir():
                  
 if __name__ == "__main__":
     try:       
+        print("Checking...")
         check_dir()
         app = QtWidgets.QApplication(sys.argv)
         mainwindow = QtWidgets.QMainWindow()
