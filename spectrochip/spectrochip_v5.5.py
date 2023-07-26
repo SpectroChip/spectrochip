@@ -1,5 +1,5 @@
 print("Starting up...")
-version = "V5.4"
+version = "V5.5"
 
 print("Importing...")
 from PyQt5 import QtCore, QtGui, QtWidgets
