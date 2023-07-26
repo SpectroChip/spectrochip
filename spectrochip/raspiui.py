@@ -159,7 +159,6 @@ class Ui_mainwindow(object):
         self.transmission_mode = QtWidgets.QAction(mainwindow)
         self.transmission_mode.setObjectName("transmission_mode")
         self.functionmenu.addAction(self.transmission_mode)
-
         self.statusbar = QtWidgets.QStatusBar(mainwindow)
         self.statusbar.setObjectName("statusbar")
         mainwindow.setStatusBar(self.statusbar)
@@ -581,7 +580,6 @@ class Ui_mainwindow(object):
         self.w_enter_button.clicked.connect(self.w_enter_button_clicked)    
         self.browse_save_button.clicked.connect(self.browse_function_button_clicked)    
         self.save_function_button.clicked.connect(self.save_function_button_clicked)    
-        
         self.continue_checkbox.toggled.connect(self.continue_checkbox_check)
         self.sg_filter_checkbox.toggled.connect(self.sg_filter_checkbox_check)
         self.save_rd_data_checkbox.toggled.connect(self.save_data_check)
@@ -789,6 +787,7 @@ class Ui_mainwindow(object):
         self.w_auto_x_axis.setChecked(True)
         self.w_auto_y_axis.setChecked(True)
         self.manual_roi.setChecked(True)
+    
     # 執行 thread_1
     def start_clicked(self):  # num of scan
         global mode, flag
@@ -1264,10 +1263,17 @@ class Ui_mainwindow(object):
         except Exception as e:
             print('error:{}'.format(e))
             return 0
+        
     def transmission_window_show(self):
         try:
-            Transmission_window.show()
-            t_ui.refresh_com()
+            if(self.a3.text() != '0' and self.a2.text() != '0' and self.a1.text() != '0' and self.a0.text() != '0'):
+                Transmission_window.show()
+                t_ui.refresh_com()
+            else:
+                dlg = QtWidgets.QMessageBox()
+                dlg.warning(None,'Error','Wavelength Calculation Parameters error!')
+                
+                pass
         except Exception as e:
             print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
             return 0  
@@ -2628,6 +2634,7 @@ class UI_Transmission_Window(object):
         except Exception as e:
             print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
         return 0
+    
     def autoscaling(self):
         global auto_mode,window_num,t_button_check
         try:
@@ -2790,8 +2797,13 @@ class UI_Transmission_Window(object):
         self.spectro_graph.clear()
         d_lambda.clear()
         try:
+            a3 = float(ui.a3.text())*10**(float(ui.e3.text()))
+            a2 = float(ui.a2.text())*10**(float(ui.e2.text()))
+            a1 = float(ui.a1.text())*10**(float(ui.e1.text()))
+            a0 = float(ui.a0.text())*10**(float(ui.e0.text()))
+        
             for i in range(len(readimg)):
-                d_lambda.append((-1.557*10**-8*(i**3))+(4.386*10**-5*(i**2))+(0.63*i)+ 295.853) 
+                d_lambda.append((a3*(i**3))+(a2*(i**2))+(a1*i)+ a0)
             self.spectro_graph.plot(d_lambda,readimg,pen=pg.mkPen('k'))
         except Exception as e:
             print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e)) 
@@ -2806,9 +2818,9 @@ class UI_Transmission_Window(object):
             if(sg_mode == 1):
                 readimg = signal.savgol_filter(readimg,int(self.SgPoint_lineEdit.text()),int(self.SgOrder_lineEdit.text()))
                 
-            for i in range(len(readimg)):
-                x.append((-1.557*10**-8*(i**3))+(4.386*10**-5*(i**2))+(0.63*i)+ 295.853) 
-            self.transmission_graph.plot(x,readimg,pen=pg.mkPen('k'))
+            #for i in range(len(readimg)):
+                #x.append((-1.557*10**-8*(i**3))+(4.386*10**-5*(i**2))+(0.63*i)+ 295.853) 
+            self.transmission_graph.plot(d_lambda,readimg,pen=pg.mkPen('k'))
         except Exception as e:
             print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e)) 
 
@@ -2984,7 +2996,6 @@ class UI_Transmission_Window(object):
         if(len(sg_timg) != 0):
             self.transData2spectro(sg_timg)
         
-
     def sg_check(self):
         if(self.Sg_check.isChecked()):
             self.SgOrder_lineEdit.setEnabled(True)
@@ -3135,13 +3146,19 @@ class UI_Transmission_Window(object):
 
     def bo_update_wdata(self):
         try:
+            x = []
+            a3 = float(ui.a3.text())*10**(float(ui.e3.text()))
+            a2 = float(ui.a2.text())*10**(float(ui.e2.text()))
+            a1 = float(ui.a1.text())*10**(float(ui.e1.text()))
+            a0 = float(ui.a0.text())*10**(float(ui.e0.text()))
+        
+            for i in range(len(ncolmean)):
+                x.append((a3*(i**3))+(a2*(i**2))+(a1*i)+ a0)
+                
             if(window_num != 7):
                 self.spectro_graph.clear()
             else:
                 self.transmission_graph.clear()
-            x = []
-            for i in range(len(ncolmean)):
-                x.append((-1.557*10**-8*(i**3))+(4.386*10**-5*(i**2))+(0.63*i)+ 295.853) 
                 
             if self.Sg_check.isChecked():
                 y = signal.savgol_filter(ncolmean, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
@@ -3159,7 +3176,6 @@ class UI_Transmission_Window(object):
     def save_ref_default(self):
         dataframe = pd.DataFrame({'Lambda':d_lambda,'Dark':Dark_data,'Spectrum':refSpectro_data,'Smd':refsmd_data,'Smdmb':refmall_data})
         dataframe.to_csv('./ttest/ref_default.csv',index = True)
-        pass
 
     def saveData_bo(self):
         global refSpectro_data,refsmd_data,refmall_data,Dark_data,sampleSpectro_data,samsmd_data,sammall_data,trans_data
