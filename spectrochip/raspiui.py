@@ -1,22 +1,30 @@
 print("Starting up...")
-version = "V4.4"
+version = "V5.5"
 
 print("Importing...")
 from PyQt5 import QtCore, QtGui, QtWidgets
 from scipy import signal
 import numpy as np
 import pyqtgraph as pg
-import sys, configparser, cv2, threading, subprocess, time, os
+import sys, configparser, cv2, threading, subprocess, time, os,serial
+import pandas as pd
 print("Import Complete")
 
 np.set_printoptions(threshold = sys.maxsize)
 
-config = configparser.ConfigParser()
+config = configparser.ConfigParser()             #configparser 文件解析器
 config.read('config.ini')
 
-shutter = config['default']['shutter'] #max 1,000,000
-anolog_gain = config['default']['anolog_gain'] #max 100,000,000
+###################################### Initialization #####################################
+
+# 相機參數
+shutter = config['default']['shutter']          #max 1,000,000
+anolog_gain = config['default']['anolog_gain']  #max 100,000,000
 digital_gain = config['default']['digital_gain']
+st_max = 1000000
+ag_max = 10000000
+
+# 坐標軸參數
 x = config['default']['x']
 y = config['default']['y']
 deltax = config['default']['deltax']
@@ -26,6 +34,7 @@ x_axis_max = config['graph']['x_axis_max']
 y_axis_min = config['graph']['y_axis_min']
 y_axis_max = config['graph']['y_axis_max']
 
+# 波長校正係數
 a3 = config['wavelength_calibration']['a3']
 a2 = config['wavelength_calibration']['a2']
 a1 = config['wavelength_calibration']['a1']
@@ -35,18 +44,12 @@ e2 = config['wavelength_calibration']['e2']
 e1 = config['wavelength_calibration']['e1']
 e0 = config['wavelength_calibration']['e0']
 
-I_max = config['auto_scaling']['I_max']
-I_thr_percentage = config['auto_scaling']['I_thr_percentage']
-I_thr_tolerance = config['auto_scaling']['I_thr_tolerance']
+########### 家峰 function 宣告 global 參數及初始化 #################
 
-num_scan = config['numof_scan']['numberof_scan']
+# 判斷是哪個 window 
+window_num = 1 
 
-w_length = config['sgfilter']['window_length']
-poly_order = config['sgfilter']['polyorder']
-
-st_max = 100000
-ag_max = 10000000
-
+# AutoScaling 參數
 st1 = 0
 st2 = 0
 I1 = 0
@@ -55,21 +58,35 @@ I2 = 0
 I_thr = 0
 I_thr_top = 0
 I_thr_bottom = 0
+max_value = 0
+goal_st = 0
 
-mode = 0
+I_max = config['auto_scaling']['I_max']
+I_thr_percentage = config['auto_scaling']['I_thr_percentage']
+I_thr_tolerance = config['auto_scaling']['I_thr_tolerance']
+
+# 拍照次數
+num_scan = config['numof_scan']['numberof_scan']
+
+# SG參數
+w_length = config['sgfilter']['window_length']
+poly_order = config['sgfilter']['polyorder']
+
+# 模式
+mode = 0       
 auto_mode = 0
 roi_mode = 1
 flag = 0
 
-max_value = 0
-goal_st = 0
 new_y0 = 0
 c_draw_wgraph = 0
 
-wdata = []
-numb_ofscan = []
-ncolmean = []
+# 拍照資料存取
+wdata = []       # 波長
+numb_ofscan = [] # 連續拍照資料
+ncolmean = []    # 連續拍照資料做平均
 
+# Auto find peak
 hg_max = 0
 hg_data = []
 hg_peak = []
@@ -81,6 +98,35 @@ dist = 0
 
 hgar_temp = [0] * 10
 
+########### Transmission function 宣告 global 參數及初始化 #################
+bo_mode = 0
+t_button_check = 1                                             # 沒有 t1 限制 
+spectro_mode = 0                                               # Ref or Sample
+# 存取光譜數據
+Dark_data = []
+refSpectro_data = []
+refsmd_data = []
+refmall_data = []                                               # 都扣完後的
+sampleSpectro_data = []
+samsmd_data = []
+sammall_data = []
+trans_data = []
+d_lambda = []
+sg_img = []
+
+sg_timg = []
+# 設定 serial 參數
+ser = serial.Serial()
+ser.baudrate = 115200
+ser.bytesize = serial.EIGHTBITS 	#number of bits per bytes
+ser.parity = serial.PARITY_NONE 	#set parity check
+ser.stopbits = serial.STOPBITS_ONE 	#number of stop bits
+ser.timeout = 0.5           	    #non-block read 0.5s
+ser.writeTimeout = 0  		        #timeout for write 0.5s
+ser.xonxoff = False    			    #disable software flow control
+ser.rtscts = False     			    #disable hardware (RTS/CTS) flow control
+ser.dsrdtr = False     			    #disable hardware (DSR/DTR) flow control
+
 class SignalCommunication(QtCore.QObject):
     new_image = QtCore.pyqtSignal()
     new_y0 = QtCore.pyqtSignal()
@@ -88,6 +134,7 @@ class SignalCommunication(QtCore.QObject):
     new_wdata = QtCore.pyqtSignal()
     new_goal_st =  QtCore.pyqtSignal()
     new_pixel = QtCore.pyqtSignal()
+    bo_new_data = QtCore.pyqtSignal()
 
 class Ui_mainwindow(object):
     def setupUi(self, mainwindow):
@@ -109,6 +156,10 @@ class Ui_mainwindow(object):
         
         self.functionmenu.addAction(self.actionCalculate_wavelength)
         
+        self.transmission_mode = QtWidgets.QAction(mainwindow)
+        self.transmission_mode.setObjectName("transmission_mode")
+        self.functionmenu.addAction(self.transmission_mode)
+
         self.statusbar = QtWidgets.QStatusBar(mainwindow)
         self.statusbar.setObjectName("statusbar")
         mainwindow.setStatusBar(self.statusbar)
@@ -511,8 +562,9 @@ class Ui_mainwindow(object):
         
         self.retranslateUi(mainwindow)
         QtCore.QMetaObject.connectSlotsByName(mainwindow)
-        
+        # UI 介面連接 function
         self.actionCalculate_wavelength.triggered.connect(self.w_cal_button_clicked)
+        self.transmission_mode.triggered.connect(self.transmission_window_show)
         self.start.clicked.connect(self.start_clicked)
         self.fix_x_axis.clicked.connect(self.x_axis_clicked)    
         self.auto_x_axis.clicked.connect(self.x_axis_clicked)    
@@ -636,7 +688,7 @@ class Ui_mainwindow(object):
         self.browse_save_button.setText(_translate("mainwindow", "Browse"))
         self.save_function_button.setText(_translate("mainwindow", "Save"))
         self.actionCalculate_wavelength.setText(_translate("mainwindow", "Calculate Wavelength Parameter"))
-
+        self.transmission_mode.setText(_translate("mainwindow", "Transmission Mode"))
         self.pixel_graph.setBackground('w')
         self.pixel_graph.setLabel('left', 'Intensity')
         self.pixel_graph.setLabel('bottom', 'Pixel')
@@ -692,7 +744,7 @@ class Ui_mainwindow(object):
         
         self.window_length_edit.setText(w_length)
         self.polyorder_edit.setText(poly_order)
-        
+        # 設定輸入格式
         self.shutter_edit.setValidator(QtGui.QIntValidator())
         self.anologgain_edit.setValidator(QtGui.QDoubleValidator())
         self.digitalgain_edit.setValidator(QtGui.QDoubleValidator())
@@ -737,8 +789,8 @@ class Ui_mainwindow(object):
         self.w_auto_x_axis.setChecked(True)
         self.w_auto_y_axis.setChecked(True)
         self.manual_roi.setChecked(True)
-        
-    def start_clicked(self):
+    # 執行 thread_1
+    def start_clicked(self):  # num of scan
         global mode, flag
         _translate = QtCore.QCoreApplication.translate
 
@@ -757,7 +809,7 @@ class Ui_mainwindow(object):
         thread1 = threading.Thread(target = thread_1)
         thread1.daemon = True
         thread1.start()
-        
+        # 調整Pixel graph 座標範圍
     def y_axis_clicked(self):
         _translate = QtCore.QCoreApplication.translate
         
@@ -787,7 +839,18 @@ class Ui_mainwindow(object):
             self.Xaxis_min.setEnabled(False)
             self.Xaxis_max.setEnabled(False)
 
-
+    def y_axis_fix(self):
+        yaxis_min = self.Yaxis_min.text()
+        yaxis_max = self.Yaxis_max.text()
+        self.pixel_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
+        
+    def x_axis_fix(self):
+        xaxis_min = self.Xaxis_min.text()
+        xaxis_max = self.Xaxis_max.text()
+        self.pixel_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
+        
+    
+    # 調整 Wavelength graph 座標範圍
     def w_y_axis_clicked(self):
         _translate = QtCore.QCoreApplication.translate
         
@@ -802,7 +865,7 @@ class Ui_mainwindow(object):
             self.wavelength_graph.enableAutoRange(axis='y')
             self.W_Yaxis_min.setEnabled(False)
             self.W_Yaxis_max.setEnabled(False)
-            
+        
     def w_x_axis_clicked(self):
         _translate = QtCore.QCoreApplication.translate
         
@@ -816,16 +879,27 @@ class Ui_mainwindow(object):
             self.wavelength_graph.enableAutoRange(axis='x')
             self.W_Xaxis_min.setEnabled(False)
             self.W_Xaxis_max.setEnabled(False)
-            
+
+    def w_y_axis_fix(self):
+        yaxis_min = self.W_Yaxis_min.text()
+        yaxis_max = self.W_Yaxis_max.text()
+        self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
+        
+    def w_x_axis_fix(self):
+        xaxis_min = self.W_Xaxis_min.text()
+        xaxis_max = self.W_Xaxis_max.text()
+        self.wavelength_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
+
+    # 執行 thread_2
     def auto_scaling_clicked(self):
-        global auto_mode
+        global auto_mode,window_num
         
         auto_mode = 10
-        
+        window_num = 1
         thread2 = threading.Thread(target = thread_2)
         thread2.daemon = True
         thread2.start()
-    
+    # 執行 auto_roi 並執行thread_1
     def auto_roi_clicked(self):
         global roi_mode, mode
         _translate = QtCore.QCoreApplication.translate
@@ -839,7 +913,7 @@ class Ui_mainwindow(object):
         thread1 = threading.Thread(target = thread_1)
         thread1.daemon = True
         thread1.start()
-        
+    # 手動設定 roi 範圍
     def manual_roi_clicked(self):
         global roi_mode, mode
         _translate = QtCore.QCoreApplication.translate
@@ -849,7 +923,7 @@ class Ui_mainwindow(object):
         self.y0.setEnabled(True)
         self.x1.setEnabled(True)
         self.auto_roi.setChecked(False)
-        
+    # 呼叫 second window
     def w_cal_button_clicked(self):
         c_ui.c_graph.clear()
         x = np.arange(1, len(ncolmean)+1)
@@ -860,7 +934,7 @@ class Ui_mainwindow(object):
             y = ncolmean
         c_ui.c_graph.plot(x, y, pen=pg.mkPen('k'))
         secondwindow.show()
-    
+    # 波長轉換
     def w_enter_button_clicked(self):
         check = wavelength_convert()
         if check!=1:
@@ -868,7 +942,7 @@ class Ui_mainwindow(object):
         check = self.draw_wavelength_graph_signal()
         if check!=1:
             raise Exception
-            
+    # save as default btn
     def change_btn_clicked(self):
         self.statusbar.showMessage("Changing Default")
         
@@ -895,7 +969,7 @@ class Ui_mainwindow(object):
             self.statusbar.showMessage("Default change complete")
         else:
             self.statusbar.showMessage("Please tick 1 or both checkbox to change default")
-    
+    # browse_function_button
     def browse_function_button_clicked(self):
         filename = QtWidgets.QFileDialog.getExistingDirectory(None, 'Save Path', '')
         self.browse_file_edit.setText(filename)
@@ -980,26 +1054,7 @@ class Ui_mainwindow(object):
             self.browse_file_edit.setEnabled(False)
             self.browse_save_button.setEnabled(False)
             
-    def y_axis_fix(self):
-        yaxis_min = self.Yaxis_min.text()
-        yaxis_max = self.Yaxis_max.text()
-        self.pixel_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
-        
-    def x_axis_fix(self):
-        xaxis_min = self.Xaxis_min.text()
-        xaxis_max = self.Xaxis_max.text()
-        self.pixel_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
-        
-    def w_y_axis_fix(self):
-        yaxis_min = self.W_Yaxis_min.text()
-        yaxis_max = self.W_Yaxis_max.text()
-        self.wavelength_graph.setYRange(int(yaxis_min), int(yaxis_max), padding=0)
-        
-    def w_x_axis_fix(self):
-        xaxis_min = self.W_Xaxis_min.text()
-        xaxis_max = self.W_Xaxis_max.text()
-        self.wavelength_graph.setXRange(int(xaxis_min), int(xaxis_max), padding=0)
-    
+    # roi 調整
     def roi_change(self):
         check = crop_image()
         if check != 1:
@@ -1024,6 +1079,7 @@ class Ui_mainwindow(object):
             raise Exception
         print("ROI DONE")
     
+    # auto_scaling_paremeter_change
     def auto_scaling_paremeter_change(self):
         _translate = QtCore.QCoreApplication.translate
         
@@ -1038,7 +1094,8 @@ class Ui_mainwindow(object):
         I_thr_bottom = I_thr - I_thr_tolerance
         self.I_thr_tolerance_label1.setText(_translate("mainwindow", str(I_thr_top) + '~' + str(I_thr_bottom)))
         self.I_thr_percentage_label1.setText(_translate("mainwindow", str(I_thr)))
-        
+
+    # 處理照片時間
     def scan_number_change(self):
         global num_scan
         
@@ -1056,7 +1113,7 @@ class Ui_mainwindow(object):
     
     def sg_change(self):
         self.draw_both_graph_signal()
-            
+    # auto roi scan
     def roi_scan(self):
         global max_value, new_y1
         
@@ -1070,11 +1127,11 @@ class Ui_mainwindow(object):
                 new_y1 = 0
             signalComm.new_y0.emit()
             
-            return 1
+            return 1                             # 都扣完後的ㄆ
         except Exception as e:
             print('error:{}'.format(e))
             return 0
-            
+    # 畫 roi 範圍
     def draw_roi(self, img):
         x0 = int(self.x0.text())
         y0 = int(self.y0.text())
@@ -1090,7 +1147,7 @@ class Ui_mainwindow(object):
         
         img1 = cv2.rectangle(img, roi_start_point, roi_end_point, roi_color, thickness)
         return img1
-        
+    # 畫 pixel graph
     def update_data(self):
         try:
             self.pixel_graph.clear()
@@ -1106,7 +1163,7 @@ class Ui_mainwindow(object):
         except Exception as e:
             print('error:{}'.format(e))
             return 0    
-    
+    # 畫 wavelength graph
     def update_wdata(self):
         try:
             self.wavelength_graph.clear()
@@ -1121,7 +1178,7 @@ class Ui_mainwindow(object):
         except Exception as e:
             print('error:{}'.format(e))
             return 0    
-            
+    
     def update_image(self):
         try:
             imgformat = self.format_box.currentText().lower()
@@ -1139,10 +1196,13 @@ class Ui_mainwindow(object):
         except Exception as e:
             print('error:{}'.format(e))
             return 0
-    
+    # autoscaling update_st
     def update_st(self):
         try:
-            self.shutter_edit.setText(str(goal_st))
+            if window_num == 1:
+                self.shutter_edit.setText(str(goal_st))
+            else:
+                t_ui.shutter_lineEdit.setText(str(goal_st))
             return 1
         except Exception as e:
             print('error:{}'.format(e))
@@ -1155,7 +1215,7 @@ class Ui_mainwindow(object):
         except Exception as e:
             print('error:{}'.format(e))
             return 0
-                                    
+                                
     def draw_spectrum_graph_signal(self):
         try:
             signalComm.new_data.emit()
@@ -1204,7 +1264,14 @@ class Ui_mainwindow(object):
         except Exception as e:
             print('error:{}'.format(e))
             return 0
-    
+    def transmission_window_show(self):
+        try:
+            Transmission_window.show()
+            t_ui.refresh_com()
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+            return 0  
+    # second window
 class Ui_w_calibration(object):
     def setupUi(self, w_calibration):
         w_calibration.setObjectName("w_calibration")
@@ -1495,7 +1562,8 @@ class Ui_w_calibration(object):
         self.c_wavelength_graph.setLabel('bottom', 'Wavelength')
         
         self.ar_autofindpeak_btn.setEnabled(False)
-        
+
+    # 計算波長校正係數
     def w_cal_button_clicked(self):
         global c_draw_wgraph
         try:
@@ -1692,7 +1760,7 @@ class Ui_w_calibration(object):
             self.lambda8.setText(hgar_temp[7])
             self.lambda9.setText(hgar_temp[8])
             self.lambda10.setText(hgar_temp[9])
-            
+    # 執行 thread_3
     def ar_autofindpeak_btn_clicked(self):
         thread3 = threading.Thread(target = thread_3)
         thread3.daemon = True
@@ -1709,21 +1777,1652 @@ class Ui_w_calibration(object):
         self.pixel8.setText('0')
         self.pixel9.setText('0')
         self.pixel10.setText('0')
-                            
+    # Transmission window UI 設定及初始化
+class UI_Transmission_Window(object):
+    def setupUi(self, Transmission_window):
+        Transmission_window.setObjectName("Transmission_Window")
+        Transmission_window.resize(1500, 1000)
+        self.centralwidget = QtWidgets.QWidget(Transmission_window)
+        self.centralwidget.setObjectName("centralwidget")
+        self.shutter_label = QtWidgets.QLabel(self.centralwidget)
+        self.shutter_label.setGeometry(QtCore.QRect(80, 180, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.shutter_label.setFont(font)
+        self.shutter_label.setObjectName("shutter_label")
+        self.analogGain_label = QtWidgets.QLabel(self.centralwidget)
+        self.analogGain_label.setGeometry(QtCore.QRect(80, 220, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.analogGain_label.setFont(font)
+        self.analogGain_label.setObjectName("analogGain_label")
+        self.digitalGain_label = QtWidgets.QLabel(self.centralwidget)
+        self.digitalGain_label.setGeometry(QtCore.QRect(80, 260, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.digitalGain_label.setFont(font)
+        self.digitalGain_label.setObjectName("digitalGain_label")
+        self.listWidget = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget.setGeometry(QtCore.QRect(60, 170, 381, 151))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.listWidget.setFont(font)
+        self.listWidget.setObjectName("listWidget")
+        self.listWidget_10 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_10.setGeometry(QtCore.QRect(60, 414, 381, 90))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.listWidget_10.setFont(font)
+        self.listWidget_10.setObjectName("listWidget")
+        self.shutter_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.shutter_lineEdit.setGeometry(QtCore.QRect(180, 190, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.shutter_lineEdit.setFont(font)
+        self.shutter_lineEdit.setObjectName("shutter_lineEdit")
+        
+        self.t1_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.t1_lineEdit.setGeometry(QtCore.QRect(115, 430, 100, 22))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.t1_lineEdit.setFont(font)
+        self.t1_lineEdit.setObjectName("t1_lineEdit")
+        self.t1_1label = QtWidgets.QLabel(self.centralwidget)
+        self.t1_1label.setGeometry(QtCore.QRect(250, 415, 150, 55))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.t1_1label.setFont(font)
+        self.t1_1label.setObjectName("t1_1label")
+        self.t2_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.t2_lineEdit.setGeometry(QtCore.QRect(115, 465, 100, 22))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.t2_lineEdit.setFont(font)
+        self.t2_lineEdit.setObjectName("t2_lineEdit")
+        self.t2_1label = QtWidgets.QLabel(self.centralwidget)
+        self.t2_1label.setGeometry(QtCore.QRect(250, 450, 150, 55))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.t2_1label.setFont(font)
+        self.t2_1label.setObjectName("t2_1label")
+        self.AnalogGain_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.AnalogGain_lineEdit.setGeometry(QtCore.QRect(180, 230, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.AnalogGain_lineEdit.setFont(font)
+        self.AnalogGain_lineEdit.setObjectName("AnalogGain_lineEdit")
+        self.DigitalGain_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.DigitalGain_lineEdit.setGeometry(QtCore.QRect(180, 270, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.DigitalGain_lineEdit.setFont(font)
+        self.DigitalGain_lineEdit.setObjectName("DigitalGain_lineEdit")
+        self.shutter_annotation_label = QtWidgets.QLabel(self.centralwidget)
+        self.shutter_annotation_label.setGeometry(QtCore.QRect(320, 200, 111, 16))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.shutter_annotation_label.setFont(font)
+        self.shutter_annotation_label.setObjectName("shutter_annotation_label")
+        self.analogGain_annotation_label = QtWidgets.QLabel(self.centralwidget)
+        self.analogGain_annotation_label.setGeometry(QtCore.QRect(320, 240, 111, 16))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.analogGain_annotation_label.setFont(font)
+        self.analogGain_annotation_label.setObjectName("analogGain_annotation_label")
+        self.digitalGain_annotation_label = QtWidgets.QLabel(self.centralwidget)
+        self.digitalGain_annotation_label.setGeometry(QtCore.QRect(320, 280, 111, 21))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.digitalGain_annotation_label.setFont(font)
+        self.digitalGain_annotation_label.setObjectName("digitalGain_annotation_label")
+        self.listWidget_2 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_2.setGeometry(QtCore.QRect(60, 40, 381, 111))
+        self.listWidget_2.setObjectName("listWidget_2")
+        self.machineNum_label = QtWidgets.QLabel(self.centralwidget)
+        self.machineNum_label.setGeometry(QtCore.QRect(75, 50, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(11)
+        self.machineNum_label.setFont(font)
+        self.machineNum_label.setObjectName("machineNum_label")
+        self.com_label = QtWidgets.QLabel(self.centralwidget)
+        self.com_label.setGeometry(QtCore.QRect(245, 50, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(11)
+        self.com_label.setFont(font)
+        self.com_label.setObjectName("com_label")
+        self.portbox = QtWidgets.QComboBox(self.centralwidget)
+        self.portbox.setGeometry(QtCore.QRect(300, 60, 70, 28))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.portbox.setFont(font)
+        self.portbox.setObjectName("portbox")
+        self.refresh_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.refresh_btn.setGeometry(QtCore.QRect(390, 60, 33, 33))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.refresh_btn.setFont(font)
+        self.refresh_btn.setObjectName("refresh_btn")
+        self.MachineNum_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.MachineNum_lineEdit.setGeometry(QtCore.QRect(183, 60, 55, 31))
+        self.MachineNum_lineEdit.setObjectName("MachineNum_lineEdit")
+        self.light_label = QtWidgets.QLabel(self.centralwidget)
+        self.light_label.setGeometry(QtCore.QRect(80, 100, 110, 51))
+        font = QtGui.QFont()
+        font.setPointSize(11)
+        self.light_label.setFont(font)
+        self.light_label.setObjectName("light_label")
+        self.LightA_check = QtWidgets.QRadioButton(self.centralwidget)
+        self.LightA_check.setGeometry(QtCore.QRect(180, 120, 98, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.LightA_check.setFont(font)
+        self.LightA_check.setObjectName("LightA_check")
+        self.LightB_check = QtWidgets.QRadioButton(self.centralwidget)
+        self.LightB_check.setGeometry(QtCore.QRect(240, 120, 98, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.LightB_check.setFont(font)
+        self.LightB_check.setObjectName("LightB_check")
+        self.LightC_check = QtWidgets.QRadioButton(self.centralwidget)
+        self.LightC_check.setGeometry(QtCore.QRect(300, 120, 98, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.LightC_check.setFont(font)
+        self.LightC_check.setObjectName("LightC_check")
+        self.listWidget_3 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_3.setGeometry(QtCore.QRect(60, 340, 381, 61))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.listWidget_3.setFont(font)
+        self.listWidget_3.setObjectName("listWidget_3")
+        self.AutoScaling_label = QtWidgets.QLabel(self.centralwidget)
+        self.AutoScaling_label.setGeometry(QtCore.QRect(80, 350, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.AutoScaling_label.setFont(font)
+        self.AutoScaling_label.setObjectName("AutoScaling_label")
+        self.t1_label = QtWidgets.QLabel(self.centralwidget)
+        self.t1_label.setGeometry(QtCore.QRect(80, 415, 25, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.t1_label.setFont(font)
+        self.t1_label.setObjectName("t1_label")
+        self.t2_label = QtWidgets.QLabel(self.centralwidget)
+        self.t2_label.setGeometry(QtCore.QRect(80, 450, 25, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.t2_label.setFont(font)
+        self.t2_label.setObjectName("t1_label")
+        self.listWidget_4 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_4.setGeometry(QtCore.QRect(60, 520, 381, 355))     # 參考取樣區域
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.listWidget_4.setFont(font)
+        self.listWidget_4.setObjectName("listWidget_4")
+        self.Ref_check = QtWidgets.QRadioButton(self.centralwidget)
+        self.Ref_check.setGeometry(QtCore.QRect(100, 540, 98, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Ref_check.setFont(font)
+        self.Ref_check.setObjectName("Ref_check")
+        self.Sample_check = QtWidgets.QRadioButton(self.centralwidget)
+        self.Sample_check.setGeometry(QtCore.QRect(280, 540, 98, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Sample_check.setFont(font)
+        self.Sample_check.setObjectName("Sample_check")
+        self.nos_label = QtWidgets.QLabel(self.centralwidget)
+        self.nos_label.setGeometry(QtCore.QRect(80, 560, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.nos_label.setFont(font)
+        self.nos_label.setObjectName("label_9")
+        self.nos_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.nos_lineEdit.setGeometry(QtCore.QRect(260, 570, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.nos_lineEdit.setFont(font)
+        self.nos_lineEdit.setObjectName("nos_lineEdit")
+        self.baseline_label = QtWidgets.QLabel(self.centralwidget)
+        self.baseline_label.setGeometry(QtCore.QRect(80, 590, 171, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.baseline_label.setFont(font)
+        self.baseline_label.setObjectName("baseline_label")
+        self.baseLineMin = QtWidgets.QLineEdit(self.centralwidget)
+        self.baseLineMin.setGeometry(QtCore.QRect(80, 640, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.baseLineMin.setFont(font)
+        self.baseLineMin.setObjectName("baseLineMin")
+        self.baseLineMax = QtWidgets.QLineEdit(self.centralwidget)
+        self.baseLineMax.setGeometry(QtCore.QRect(260, 640, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.baseLineMax.setFont(font)
+        self.baseLineMax.setObjectName("baseLineMax")
+        self.label_999 = QtWidgets.QLabel(self.centralwidget)
+        self.label_999.setGeometry(QtCore.QRect(220, 630, 40, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.label_999.setFont(font)
+        self.label_999.setObjectName("label_999")
+        self.dark_label = QtWidgets.QLabel(self.centralwidget)
+        self.dark_label.setGeometry(QtCore.QRect(80, 670, 171, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.dark_label.setFont(font)
+        self.dark_label.setObjectName("dark_label")
+        self.Dark_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.Dark_btn.setGeometry(QtCore.QRect(260, 680, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Dark_btn.setFont(font)
+        self.Dark_btn.setObjectName("Dark_btn")
+        self.AutoScaling_button = QtWidgets.QPushButton(self.centralwidget)
+        self.AutoScaling_button.setGeometry(QtCore.QRect(260, 360, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.AutoScaling_button.setFont(font)
+        self.AutoScaling_button.setObjectName("AutoScaling_button")
+        self.spectrum_label = QtWidgets.QLabel(self.centralwidget)
+        self.spectrum_label.setGeometry(QtCore.QRect(80, 710, 171, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.spectrum_label.setFont(font)
+        self.spectrum_label.setObjectName("spectrum_label")
+        self.Spectro_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.Spectro_btn.setGeometry(QtCore.QRect(260, 720, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Spectro_btn.setFont(font)
+        self.Spectro_btn.setObjectName("Spectro_btn")
+        self.smd_label = QtWidgets.QLabel(self.centralwidget)
+        self.smd_label.setGeometry(QtCore.QRect(80, 750, 171, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.smd_label.setFont(font)
+        self.smd_label.setObjectName("smd_label")
+        self.Smd_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.Smd_btn.setGeometry(QtCore.QRect(260, 760, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Smd_btn.setFont(font)
+        self.Smd_btn.setObjectName("Smd_btn")
+        self.smdmb_label = QtWidgets.QLabel(self.centralwidget)
+        self.smdmb_label.setGeometry(QtCore.QRect(80, 780, 171, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.smdmb_label.setFont(font)
+        self.smdmb_label.setObjectName("smdmb_label")
+        self.Smdmb_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.Smdmb_btn.setGeometry(QtCore.QRect(260, 800, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Smdmb_btn.setFont(font)
+        self.Smdmb_btn.setObjectName("Smdmb_btn")
+        self.continuous_check = QtWidgets.QCheckBox(self.centralwidget)
+        self.continuous_check.setGeometry(QtCore.QRect(80, 853, 111, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.continuous_check.setFont(font)
+        self.continuous_check.setObjectName("t_continuous_check")
+        self.t_continuous_check = QtWidgets.QCheckBox(self.centralwidget)
+        self.t_continuous_check.setGeometry(QtCore.QRect(80, 930, 111, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.t_continuous_check.setFont(font)
+        self.t_continuous_check.setObjectName("t_continuous_check")
+        self.ref_default_check = QtWidgets.QCheckBox(self.centralwidget)
+        self.ref_default_check.setGeometry(QtCore.QRect(80, 830, 130, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.ref_default_check.setFont(font)
+        self.ref_default_check.setObjectName("ref_default_check")
+        self.trans_label = QtWidgets.QLabel(self.centralwidget)
+        self.trans_label.setGeometry(QtCore.QRect(80, 890, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.trans_label.setFont(font)
+        self.trans_label.setObjectName("trans_label")
+        self.listWidget_5 = QtWidgets.QListWidget(self.centralwidget)        # 穿透區域
+        self.listWidget_5.setGeometry(QtCore.QRect(60, 890, 381, 67))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.listWidget_5.setFont(font)
+        self.listWidget_5.setObjectName("listWidget_5")
+        self.Trans_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.Trans_btn.setGeometry(QtCore.QRect(260, 900, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Trans_btn.setFont(font)
+        self.Trans_btn.setObjectName("Trans_btn")
+        self.listWidget_6 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_6.setGeometry(QtCore.QRect(500, 40, 321, 111))    # SG 區域
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.listWidget_6.setFont(font)
+        self.listWidget_6.setObjectName("listWidget_6")
+        self.Sg_check = QtWidgets.QCheckBox(self.centralwidget)
+        self.Sg_check.setGeometry(QtCore.QRect(520, 50, 111, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Sg_check.setFont(font)
+        self.Sg_check.setObjectName("Sg_check")
+        self.sg_data_label = QtWidgets.QLabel(self.centralwidget)
+        self.sg_data_label.setGeometry(QtCore.QRect(520, 75, 131, 21))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.sg_data_label.setFont(font)
+        self.sg_data_label.setObjectName("label_18")
+        self.SgPoint_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.SgPoint_lineEdit.setGeometry(QtCore.QRect(670, 60, 101, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.SgPoint_lineEdit.setFont(font)
+        self.SgPoint_lineEdit.setObjectName("SgPoint_lineEdit")
+        self.SgOrder_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.SgOrder_lineEdit.setGeometry(QtCore.QRect(670, 100, 101, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.SgOrder_lineEdit.setFont(font)
+        self.SgOrder_lineEdit.setObjectName("SgOrder_lineEdit")
+        self.sg_order_label = QtWidgets.QLabel(self.centralwidget)
+        self.sg_order_label.setGeometry(QtCore.QRect(520, 90, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.sg_order_label.setFont(font)
+        self.sg_order_label.setObjectName("sg_order_label")
+        self.listWidget_7 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_7.setGeometry(QtCore.QRect(1080, 20, 331, 311))     # 存檔區域
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.listWidget_7.setFont(font)
+        self.listWidget_7.setObjectName("listWidget_7")
+        self.savefunction_label = QtWidgets.QLabel(self.centralwidget)
+        self.savefunction_label.setGeometry(QtCore.QRect(1100, 20, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.savefunction_label.setFont(font)
+        self.savefunction_label.setObjectName("savefunction_label")
+        self.databox = QtWidgets.QComboBox(self.centralwidget)
+        self.databox.setGeometry(QtCore.QRect(1270, 30, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.databox.setFont(font)
+        self.databox.setObjectName("databox")
+        self.databox.addItem("")
+        self.databox.addItem("")
+        self.databox.addItem("")
+        self.databox.addItem("")
+        self.databox.addItem("")
+        self.databox.addItem("")
+        self.databox.addItem("")
+        self.SaveRaw_check = QtWidgets.QCheckBox(self.centralwidget)
+        self.SaveRaw_check.setGeometry(QtCore.QRect(1100, 70, 111, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.SaveRaw_check.setFont(font)
+        self.SaveRaw_check.setObjectName("SaveRaw_check")
+        self.SaveSg_check = QtWidgets.QCheckBox(self.centralwidget)
+        self.SaveSg_check.setGeometry(QtCore.QRect(1100, 100, 111, 19))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.SaveSg_check.setFont(font)
+        self.SaveSg_check.setObjectName("SaveSg_check")
+        self.savefilename_label = QtWidgets.QLabel(self.centralwidget)
+        self.savefilename_label.setGeometry(QtCore.QRect(1100, 110, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.savefilename_label.setFont(font)
+        self.savefilename_label.setObjectName("savefilename_label")
+        self.SaveFName_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.SaveFName_lineEdit.setGeometry(QtCore.QRect(1100, 150, 261, 41))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.SaveFName_lineEdit.setFont(font)
+        self.SaveFName_lineEdit.setObjectName("SaveFName_lineEdit")
+        self.browsepath_label = QtWidgets.QLabel(self.centralwidget)
+        self.browsepath_label.setGeometry(QtCore.QRect(1100, 180, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.browsepath_label.setFont(font)
+        self.browsepath_label.setObjectName("browsepath_label")
+        self.BrowsePath_lineEdit = QtWidgets.QLineEdit(self.centralwidget)
+        self.BrowsePath_lineEdit.setGeometry(QtCore.QRect(1100, 230, 261, 41))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.BrowsePath_lineEdit.setFont(font)
+        self.BrowsePath_lineEdit.setObjectName("BrowsePath_lineEdit")
+        self.Browse_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.Browse_btn.setGeometry(QtCore.QRect(1100, 280, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.Browse_btn.setFont(font)
+        self.Browse_btn.setObjectName("Browse_btn")
+        self.saveData_btn = QtWidgets.QPushButton(self.centralwidget)
+        self.saveData_btn.setGeometry(QtCore.QRect(1260, 280, 121, 31))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.saveData_btn.setFont(font)
+        self.saveData_btn.setObjectName("saveData_btn")
+        self.listWidget_8 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_8.setGeometry(QtCore.QRect(1080, 350, 181, 241))      # axis 1 區域
+        self.listWidget_8.setObjectName("listWidget_8")
+        self.label_25 = QtWidgets.QLabel(self.centralwidget)
+        self.label_25.setGeometry(QtCore.QRect(1140, 350, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.label_25.setFont(font)
+        self.label_25.setObjectName("label_25")
+        self.Graph1_Ymin = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph1_Ymin.setGeometry(QtCore.QRect(1090, 400, 61, 31))
+        self.Graph1_Ymin.setObjectName("Graph1_Ymin")
+        self.Graph1_Ymax = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph1_Ymax.setGeometry(QtCore.QRect(1180, 400, 61, 31))
+        self.Graph1_Ymax.setObjectName("Graph1_Ymax")
+        self.Graph1_Yauto = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph1_Yauto.setGeometry(QtCore.QRect(1100, 440, 98, 19))
+        self.Graph1_Yauto.setObjectName("Graph1_Yauto")
+        self.Graph1_yYfix = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph1_yYfix.setGeometry(QtCore.QRect(1180, 440, 98, 19))
+        self.Graph1_yYfix.setObjectName("Graph1_yYfix")
+        self.label_26 = QtWidgets.QLabel(self.centralwidget)
+        self.label_26.setGeometry(QtCore.QRect(1140, 450, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.label_26.setFont(font)
+        self.label_26.setObjectName("label_26")
+        self.Graph1_Xmin = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph1_Xmin.setGeometry(QtCore.QRect(1090, 500, 61, 31))
+        self.Graph1_Xmin.setObjectName("Graph1_Xmin")
+        self.Graph1_Xmax = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph1_Xmax.setGeometry(QtCore.QRect(1180, 500, 61, 31))
+        self.Graph1_Xmax.setObjectName("Graph1_Xmax")
+        self.Graph1_Xauto = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph1_Xauto.setGeometry(QtCore.QRect(1100, 550, 98, 19))
+        self.Graph1_Xauto.setObjectName("Graph1_Xauto")
+        self.Graph1_Xfix = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph1_Xfix.setGeometry(QtCore.QRect(1180, 550, 98, 19))
+        self.Graph1_Xfix.setObjectName("Graph1_Xfix")
+        self.Graph2_Xfix = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph2_Xfix.setGeometry(QtCore.QRect(1180, 920, 98, 19))
+        self.Graph2_Xfix.setObjectName("Graph2_Xfix")
+        self.Graph2_Yauto = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph2_Yauto.setGeometry(QtCore.QRect(1100, 810, 98, 19))
+        self.Graph2_Yauto.setObjectName("Graph2_Yauto")
+        self.label_27 = QtWidgets.QLabel(self.centralwidget)
+        self.label_27.setGeometry(QtCore.QRect(1140, 820, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.label_27.setFont(font)
+        self.label_27.setObjectName("label_27")
+        self.listWidget_9 = QtWidgets.QListWidget(self.centralwidget)
+        self.listWidget_9.setGeometry(QtCore.QRect(1080, 720, 181, 241))     
+        self.listWidget_9.setObjectName("listWidget_9")
+        self.Graph2_Xmin = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph2_Xmin.setGeometry(QtCore.QRect(1090, 870, 61, 31))
+        self.Graph2_Xmin.setObjectName("Graph2_Xmin")
+        self.Graph2_Xmax = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph2_Xmax.setGeometry(QtCore.QRect(1180, 870, 61, 31))
+        self.Graph2_Xmax.setObjectName("Graph2_Xmax")
+        self.label_28 = QtWidgets.QLabel(self.centralwidget)
+        self.label_28.setGeometry(QtCore.QRect(1140, 720, 131, 51))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.label_28.setFont(font)
+        self.label_28.setObjectName("label_28")
+        self.Graph2_Ymin = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph2_Ymin.setGeometry(QtCore.QRect(1090, 770, 61, 31))
+        self.Graph2_Ymin.setObjectName("Graph2_Ymin")
+        self.Graph2_Xauto = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph2_Xauto.setGeometry(QtCore.QRect(1100, 920, 98, 19))
+        self.Graph2_Xauto.setObjectName("Graph2_Xauto")
+        self.Graph2_Yfix = QtWidgets.QRadioButton(self.centralwidget)
+        self.Graph2_Yfix.setGeometry(QtCore.QRect(1180, 810, 98, 19))
+        self.Graph2_Yfix.setObjectName("Graph2_Yfix")
+        self.Graph2_Ymax = QtWidgets.QLineEdit(self.centralwidget)
+        self.Graph2_Ymax.setGeometry(QtCore.QRect(1180, 770, 61, 31))
+        self.Graph2_Ymax.setObjectName("Graph2_Ymax")
+        self.spectro_graph = pg.PlotWidget(self.centralwidget)
+        self.spectro_graph.setGeometry(QtCore.QRect(490, 170, 551, 391))
+        self.transmission_graph = pg.PlotWidget(self.centralwidget)
+        self.transmission_graph.setGeometry(QtCore.QRect(490, 580, 551, 391))
+        self.spectro_graph.setBackground('w')
+        self.spectro_graph.setLabel('left', 'Intensity')
+        self.spectro_graph.setLabel('bottom', 'Lambda')
+        self.transmission_graph.setBackground('w')
+        self.transmission_graph.setLabel('left', 'Intensity')
+        self.transmission_graph.setLabel('bottom', 'Lambda')
+        self.listWidget_9.raise_()
+        self.listWidget_7.raise_()
+        self.listWidget_6.raise_()
+        self.listWidget_5.raise_()
+        self.listWidget.raise_()
+        self.shutter_label.raise_()
+        self.analogGain_label.raise_()
+        self.t1_label.raise_()
+        self.t1_lineEdit.raise_()
+        self.t2_label.raise_()
+        self.t2_lineEdit.raise_()
+        self.digitalGain_label.raise_()
+        self.shutter_lineEdit.raise_()
+        self.AnalogGain_lineEdit.raise_()
+        self.DigitalGain_lineEdit.raise_()
+        self.shutter_annotation_label.raise_()
+        self.analogGain_annotation_label.raise_()
+        self.digitalGain_annotation_label.raise_()
+        self.listWidget_2.raise_()
+        self.machineNum_label.raise_()
+        self.MachineNum_lineEdit.raise_()
+        self.light_label.raise_()
+        self.LightA_check.raise_()
+        self.LightB_check.raise_()
+        self.t2_1label.raise_()
+        self.LightC_check.raise_()
+        self.listWidget_3.raise_()
+        self.AutoScaling_label.raise_()
+        self.com_label.raise_()
+        self.listWidget_4.raise_()
+        self.Ref_check.raise_()
+        self.Sample_check.raise_()
+        self.t1_1label.raise_()
+        self.nos_label.raise_()
+        self.nos_lineEdit.raise_()
+        self.baseline_label.raise_()
+        self.baseLineMin.raise_()
+        self.baseLineMax.raise_()
+        self.label_999.raise_()
+        self.ref_default_check.raise_()
+        self.dark_label.raise_()
+        self.refresh_btn.raise_()
+        self.Dark_btn.raise_()
+        self.AutoScaling_button.raise_()
+        self.spectrum_label.raise_()
+        self.Spectro_btn.raise_()
+        self.smd_label.raise_()
+        self.Smd_btn.raise_()
+        self.smdmb_label.raise_()
+        self.Smdmb_btn.raise_()
+        self.continuous_check.raise_()
+        self.t_continuous_check.raise_()
+        self.trans_label.raise_()
+        self.Trans_btn.raise_()
+        self.Sg_check.raise_()
+        self.sg_data_label.raise_()
+        self.SgPoint_lineEdit.raise_()
+        self.SgOrder_lineEdit.raise_()
+        self.sg_order_label.raise_()
+        self.savefunction_label.raise_()
+        self.databox.raise_()
+        self.portbox.raise_()
+        self.SaveRaw_check.raise_()
+        self.SaveSg_check.raise_()
+        self.savefilename_label.raise_()
+        self.SaveFName_lineEdit.raise_()
+        self.browsepath_label.raise_()
+        self.BrowsePath_lineEdit.raise_()
+        self.Browse_btn.raise_()
+        self.saveData_btn.raise_()
+        self.listWidget_8.raise_()
+        self.label_25.raise_()
+        self.Graph1_Ymin.raise_()
+        self.Graph1_Ymax.raise_()
+        self.Graph1_Yauto.raise_()
+        self.Graph1_yYfix.raise_()
+        self.label_26.raise_()
+        self.Graph1_Xmin.raise_()
+        self.Graph1_Xmax.raise_()
+        self.Graph1_Xauto.raise_()
+        self.Graph1_Xfix.raise_()
+        self.Graph2_Xfix.raise_()
+        self.Graph2_Yauto.raise_()
+        self.label_27.raise_()
+        self.Graph2_Xmin.raise_()
+        self.Graph2_Xmax.raise_()
+        self.label_28.raise_()
+        self.Graph2_Ymin.raise_()
+        self.Graph2_Xauto.raise_()
+        self.Graph2_Yfix.raise_()
+        self.Graph2_Ymax.raise_()
+        self.Graph2_Xfix.raise_()
+        Transmission_window.setCentralWidget(self.centralwidget)
+        self.menubar = QtWidgets.QMenuBar(Transmission_window)
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 1724, 21))
+        self.menubar.setObjectName("menubar")
+        Transmission_window.setMenuBar(self.menubar)
+        self.statusbar = QtWidgets.QStatusBar(Transmission_window)
+        self.statusbar.setObjectName("statusbar")
+        Transmission_window.setStatusBar(self.statusbar)
+
+        self.retranslateUi(Transmission_window)
+        QtCore.QMetaObject.connectSlotsByName(Transmission_window)
+
+    def retranslateUi(self, Transmission_window):
+        _translate = QtCore.QCoreApplication.translate
+        Transmission_window.setWindowTitle(_translate("Transmission_Window", "Transmission_Window"))
+        self.shutter_label.setText(_translate("Transmission_Window", "Shutter"))
+        self.analogGain_label.setText(_translate("Transmission_Window", "Analog Gain"))
+        self.digitalGain_label.setText(_translate("Transmission_Window", "Digital Gain"))
+        self.shutter_annotation_label.setText(_translate("Transmission_Window", "Max:1000000μs"))
+        self.analogGain_annotation_label.setText(_translate("Transmission_Window", "Max:100000000"))
+        self.digitalGain_annotation_label.setText(_translate("Transmission_Window", "Not Functioning"))
+        self.machineNum_label.setText(_translate("Transmission_Window", "Machine num :"))
+        self.light_label.setText(_translate("Transmission_Window", "Light"))
+        self.com_label.setText(_translate("Transmission_Window", "COM : "))
+        self.t1_label.setText(_translate("Transmission_Window", "T1 :"))
+        self.t2_label.setText(_translate("Transmission_Window", "T2 :"))
+        self.LightA_check.setText(_translate("Transmission_Window", "A"))
+        self.LightB_check.setText(_translate("Transmission_Window", "B"))
+        self.LightC_check.setText(_translate("Transmission_Window", "C"))
+        self.AutoScaling_label.setText(_translate("Transmission_Window", "Auto Scaling"))
+        self.Ref_check.setText(_translate("Transmission_Window", "Reference"))
+        self.Sample_check.setText(_translate("Transmission_Window", "Sample"))
+        self.nos_label.setText(_translate("Transmission_Window", "Num of scan"))
+        self.baseline_label.setText(_translate("Transmission_Window", "BaseLine range"))
+        self.label_999.setText(_translate("Transmission_Window", "～"))
+        self.dark_label.setText(_translate("Transmission_Window", "Dark"))
+        self.Dark_btn.setText(_translate("Transmission_Window", "Start"))
+        self.AutoScaling_button.setText(_translate("Transmission_Window", "Start"))
+        self.spectrum_label.setText(_translate("Transmission_Window", "Spectrum"))
+        self.Spectro_btn.setText(_translate("Transmission_Window", "Start"))
+        self.smd_label.setText(_translate("Transmission_Window", "S - D"))
+        self.Smd_btn.setText(_translate("Transmission_Window", "Start"))
+        self.smdmb_label.setText(_translate("Transmission_Window", "S - D - B"))
+        self.Smdmb_btn.setText(_translate("Transmission_Window", "Start"))
+        self.continuous_check.setText(_translate("Transmission_Window", "Continuous"))
+        self.t_continuous_check.setText(_translate("Transmission_Window", "Continuous"))
+        self.trans_label.setText(_translate("Transmission_Window", "Transmission"))
+        self.Trans_btn.setText(_translate("Transmission_Window", "Start"))
+        self.Sg_check.setText(_translate("Transmission_Window", "SG Filter"))
+        self.sg_data_label.setText(_translate("Transmission_Window", "Data Point"))
+        self.sg_order_label.setText(_translate("Transmission_Window", "Poly Order"))
+        self.savefunction_label.setText(_translate("Transmission_Window", "Save Function"))
+        self.databox.setItemText(0,_translate("Transmission_Window", "Ref Default"))
+        self.databox.setItemText(1, _translate("Transmission_Window", "Dark"))
+        self.databox.setItemText(2, _translate("Transmission_Window", "Spectrum"))
+        self.databox.setItemText(3, _translate("Transmission_Window", "S - D"))
+        self.databox.setItemText(4, _translate("Transmission_Window", "S - D - B"))
+        self.databox.setItemText(5, _translate("Transmission_Window", "Transmission"))
+        self.databox.setItemText(6, _translate("Transmission_Window", "All"))
+        self.SaveRaw_check.setText(_translate("Transmission_Window", "Raw Data"))
+        self.SaveSg_check.setText(_translate("Transmission_Window", "SG Data"))
+        self.ref_default_check.setText(_translate("Transmission_Window", "Ref default data"))
+        self.savefilename_label.setText(_translate("Transmission_Window", "Save File Name"))
+        self.browsepath_label.setText(_translate("Transmission_Window", "Browse Path"))
+        self.Browse_btn.setText(_translate("Transmission_Window", "Browse"))
+        self.saveData_btn.setText(_translate("Transmission_Window", "Save"))
+        self.label_25.setText(_translate("Transmission_Window", "Y Axis"))
+        self.Graph1_Yauto.setText(_translate("Transmission_Window", "AUTO"))
+        self.Graph1_yYfix.setText(_translate("Transmission_Window", "FIX"))
+        self.label_26.setText(_translate("Transmission_Window", "X Axis"))
+        self.Graph1_Xauto.setText(_translate("Transmission_Window", "AUTO"))
+        self.Graph1_Xfix.setText(_translate("Transmission_Window", "FIX"))
+        self.Graph2_Xfix.setText(_translate("Transmission_Window", "FIX"))
+        self.Graph2_Yauto.setText(_translate("Transmission_Window", "AUTO"))
+        self.label_27.setText(_translate("Transmission_Window", "X Axis"))
+        self.label_28.setText(_translate("Transmission_Window", "Y Axis"))
+        self.Graph2_Xauto.setText(_translate("Transmission_Window", "AUTO"))
+        self.Graph2_Yfix.setText(_translate("Transmission_Window", "FIX"))
+        self.t1_1label.setText(_translate("Transmission_Window", "Open light waiting time"))
+        self.t2_1label.setText(_translate("Transmission_Window", "Close light waiting time"))
+
+        self.refresh_btn.setIcon(QtGui.QIcon(QtWidgets.QApplication.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload)))
+        self.light_buttongroup = QtWidgets.QButtonGroup(Transmission_window)
+        self.light_buttongroup.addButton(self.LightA_check)
+        self.light_buttongroup.addButton(self.LightB_check)
+        self.light_buttongroup.addButton(self.LightC_check)
+
+        self.spectrum_mode_buttongroup = QtWidgets.QButtonGroup(Transmission_window)
+        self.spectrum_mode_buttongroup.addButton(self.Ref_check)
+        self.spectrum_mode_buttongroup.addButton(self.Sample_check)
+
+        self.Yaxis_buttongroup = QtWidgets.QButtonGroup(Transmission_window)
+        self.Yaxis_buttongroup.addButton(self.Graph1_Yauto)
+        self.Yaxis_buttongroup.addButton(self.Graph1_yYfix)
+
+        self.Xaxis_buttongroup = QtWidgets.QButtonGroup(Transmission_window)
+        self.Xaxis_buttongroup.addButton(self.Graph1_Xauto)
+        self.Xaxis_buttongroup.addButton(self.Graph1_Xfix)
+
+        self.Yaxis2_buttongroup = QtWidgets.QButtonGroup(Transmission_window)
+        self.Yaxis2_buttongroup.addButton(self.Graph2_Yauto)
+        self.Yaxis2_buttongroup.addButton(self.Graph2_Yfix)
+
+        self.Xaxis2_buttongroup = QtWidgets.QButtonGroup(Transmission_window)
+        self.Xaxis2_buttongroup.addButton(self.Graph2_Xauto)
+        self.Xaxis2_buttongroup.addButton(self.Graph2_Xfix)
+
+        self.MachineNum_lineEdit.setEnabled(False)
+        self.Dark_btn.setEnabled(False)
+        self.Spectro_btn.setEnabled(False)
+        self.Smd_btn.setEnabled(False)
+        self.Smdmb_btn.setEnabled(False)
+        self.nos_lineEdit.setEnabled(False)
+        self.baseLineMin.setEnabled(False)
+        self.baseLineMax.setEnabled(False)
+        self.t_continuous_check.setEnabled(False)
+        self.Trans_btn.setEnabled(False)
+        self.Trans_btn.setEnabled(False)
+        self.SgPoint_lineEdit.setEnabled(False)
+        self.SgOrder_lineEdit.setEnabled(False)
+        self.saveData_btn.setEnabled(True)
+        self.ref_default_check.setEnabled(False)
+        self.continuous_check.setEnabled(False)
+        self.Browse_btn.setEnabled(False)
+        self.BrowsePath_lineEdit.setEnabled(False)
+        self.SaveFName_lineEdit.setEnabled(False)
+        self.Graph1_Ymin.setEnabled(False)
+        self.Graph1_Ymax.setEnabled(False)
+        self.Graph1_Xmin.setEnabled(False)
+        self.Graph1_Xmax.setEnabled(False)
+        self.Graph2_Ymin.setEnabled(False)
+        self.Graph2_Ymax.setEnabled(False)
+        self.Graph2_Xmin.setEnabled(False)
+        self.Graph2_Xmax.setEnabled(False)
+
+        self.Graph1_Yauto.setChecked(True)
+        self.Graph1_Xauto.setChecked(True)
+        self.Graph2_Yauto.setChecked(True)
+        self.Graph2_Xauto.setChecked(True)
+
+        self.shutter_lineEdit.setText(str(1000))
+        self.AnalogGain_lineEdit.setText(str(0))
+        self.DigitalGain_lineEdit.setText(str(0))
+        self.nos_lineEdit.setText(str(1))
+        self.t1_lineEdit.setText(str(5))
+        self.t2_lineEdit.setText(str(5))
+        self.Graph1_Ymin.setText(y_axis_min)
+        self.Graph1_Ymax.setText(y_axis_max)
+        self.Graph1_Xmin.setText(x_axis_min)
+        self.Graph1_Xmax.setText(x_axis_max)
+        self.Graph2_Ymin.setText(str(0))
+        self.Graph2_Ymax.setText(str(1.2))
+        self.Graph2_Xmin.setText(str(600))
+        self.Graph2_Xmax.setText(str(850))
+
+        signalComm.bo_new_data.connect(self.bo_update_wdata)
+
+        #TODO
+        self.Ref_check.clicked.connect(self.ref_check)
+        self.Sample_check.clicked.connect(self.sample_check)
+        self.Dark_btn.clicked.connect(self.dark_spectro)
+        self.Spectro_btn.clicked.connect(self.spectro)
+        self.Smd_btn.clicked.connect(self.smd)
+        self.Smdmb_btn.clicked.connect(self.smdmb)
+        self.Trans_btn.clicked.connect(self.trans)
+        self.Sg_check.clicked.connect(self.sg_check)
+        self.saveData_btn.clicked.connect(self.saveData_bo)
+        self.AutoScaling_button.clicked.connect(self.autoscaling)
+        self.Browse_btn.clicked.connect(self.browse_path_bo)
+        self.refresh_btn.clicked.connect(self.refresh_com)
+        self.LightA_check.clicked.connect(self.reset_shutter)
+        self.LightB_check.clicked.connect(self.reset_shutter)
+        self.LightC_check.clicked.connect(self.reset_shutter)
+        self.Graph1_Yauto.clicked.connect(self.y_axis_clicked_t)
+        self.Graph1_yYfix.clicked.connect(self.y_axis_clicked_t)
+        self.Graph1_Xauto.clicked.connect(self.x_axis_clicked_t)
+        self.Graph1_Xfix.clicked.connect(self.x_axis_clicked_t)
+        self.Graph2_Yauto.clicked.connect(self.y_axis2_clicked_t)
+        self.Graph2_Yfix.clicked.connect(self.y_axis2_clicked_t)
+        self.Graph2_Xfix.clicked.connect(self.x_axis2_clicked_t)
+        self.Graph2_Xauto.clicked.connect(self.x_axis2_clicked_t)
+        self.SaveRaw_check.toggled.connect(self.save_data_ckeck)
+        self.SaveSg_check.toggled.connect(self.save_data_ckeck)
+        self.ref_default_check.toggled.connect(self.Ref_default_check)
+        self.continuous_check.toggled.connect(self.Continuous_check)
+        self.t_continuous_check.toggled.connect(self.t_Continuous_check)
+        self.Sg_check.toggled.connect(self.SG_check)
+        self.databox.currentIndexChanged.connect(self.save_data_ckeck)
+        self.portbox.currentIndexChanged.connect(self.com_connect)
+
+        self.Graph1_Ymin.textChanged[str].connect(self.y_axis_fix_t)
+        self.Graph1_Ymax.textChanged[str].connect(self.y_axis_fix_t)
+        self.Graph1_Xmin.textChanged[str].connect(self.x_axis_fix_t)
+        self.Graph1_Xmax.textChanged[str].connect(self.x_axis_fix_t)
+        self.Graph2_Ymin.textChanged[str].connect(self.y_axis2_fix_t)
+        self.Graph2_Ymax.textChanged[str].connect(self.y_axis2_fix_t)
+        self.Graph2_Xmin.textChanged[str].connect(self.x_axis2_fix_t)
+        self.Graph2_Xmax.textChanged[str].connect(self.x_axis2_fix_t)
+
+    def com_connect(self):
+        ser.port = self.portbox.currentText()
+        s = self.portbox.currentText()
+        if(s == "none"):
+            print("Not found")
+        else:    
+            print('found' + s)
+        
+    def light_open(self):
+        try:
+            t1 = int(self.t1_lineEdit.text())
+            ser.close()
+            check = self.spectroPara_check()
+            if(check == 1):
+                ser.open()
+            light_open_helper = self.light_choose() + "1#"
+            ser.write(light_open_helper.encode())
+            r = ser.read(4)
+            time.sleep(t1)
+            print("Open :{}".format(r))
+            return 1
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+        return 0
+
+    def light_close(self):
+        try:
+            light_close_helper = self.light_choose() + "0#"
+            ser.write(light_close_helper.encode())
+            r = ser.read(4)
+            ser.close()
+            print(r)
+            return 1
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+        return 0
+    
+    def reset_shutter(self):
+        try:
+            self.shutter_lineEdit.setText(str(1000))
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+        return 0
+    def autoscaling(self):
+        global auto_mode,window_num,t_button_check
+        try:
+            auto_mode = 0
+            window_num = 3
+            t_button_check = 0
+            self.Spectro_btn.setEnabled(False)
+            self.Dark_btn.setEnabled(False)
+            self.Smd_btn.setEnabled(False)
+            self.Smdmb_btn.setEnabled(False)
+            thread2 = threading.Thread(target = thread_2)
+            thread2.daemon = True
+            thread2.start()
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+            return 0  
+        
+    def dark_spectro(self):
+        global spectro_mode,bo_mode,window_num
+        try:
+            spectro_mode = self.spectroMode_check()             # 判斷是Ref(1) 還是 Sample mode(2) 因矩陣要分開存
+            if(self.ref_default_check.isChecked() and spectro_mode == 1):
+                window_num = 10
+                self.read_ref_default()
+                self.sgProcess(Dark_data)
+                self.smdBtn_checkable()
+            elif(self.Dark_btn.text() == "Stop"):
+                self.continuous_check.setChecked(False)
+            else:
+                bo_mode = 0
+                window_num = 4
+                paracheck = self.darkPara_check()                   # 判斷有無缺漏參數 沒有缺漏 return 1
+                if(paracheck == 1):
+                    thread4 = threading.Thread(target = thread_4,args = (window_num,))
+                    thread4.start()
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+            return 0    
+        
+    def spectro(self):
+        global spectro_mode,bo_mode,window_num,t_button_check
+        try:
+            spectro_mode = self.spectroMode_check()              # 判斷是Ref(1) 還是 Sample mode(2) 因矩陣要分開存 
+            if(self.ref_default_check.isChecked() and spectro_mode == 1):
+                window_num = 10
+                self.read_ref_default()
+                self.sgProcess(refSpectro_data)
+                self.smdBtn_checkable()
+            elif(self.Spectro_btn.text() == "Stop"):
+                self.continuous_check.setChecked(False)
+            else:
+                bo_mode = 0
+                window_num = 3  
+                paracheck = self.spectroPara_check()                 # 判斷有無缺漏參數 沒有缺漏 return 1
+                if(paracheck == 1):
+                    self.Dark_btn.setEnabled(False)
+                    self.Spectro_btn.setEnabled(False)
+                    t_button_check = 0
+                    thread4 = threading.Thread(target = thread_4,args = (window_num,))
+                    thread4.start()
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+            return 0    
+        
+    def smd(self):
+        global refsmd_data,samsmd_data,t_button_check,spectro_mode,bo_mode,window_num
+        try:
+            spectro_mode = self.spectroMode_check()
+            if(self.Smd_btn.text() == "Stop"):
+                self.continuous_check.setChecked(False)           
+            elif(self.continuous_check.isChecked()):
+                bo_mode = 0
+                window_num = 5
+                t_button_check = 0
+                thread4 = threading.Thread(target = thread_4,args = (window_num,))
+                thread4.start()
+            else:
+                window_num = 10
+                if(spectro_mode == 1):
+                    refsmd_data = refSpectro_data - Dark_data
+                    self.sgProcess(refsmd_data)
+                    self.statusbar.showMessage("已取得參考減暗光譜")
+                else:
+                    samsmd_data = sampleSpectro_data - Dark_data
+                    self.sgProcess(samsmd_data)
+                    self.statusbar.showMessage("已取得樣品減暗光譜")
+                self.smdmbBtn_checkable()
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+            return 0
+
+    def smdmb(self):
+        global refmall_data,sammall_data,bo_mode,t_button_check,window_num,spectro_mode
+        base_data = 0
+        try:
+            spectro_mode = self.spectroMode_check()        
+            if(self.Smdmb_btn.text() == "Stop"):
+                self.continuous_check.setChecked(False)           
+            elif(self.continuous_check.isChecked()):
+                bo_mode = 0
+                window_num = 6
+                t_button_check = 0
+                thread4 = threading.Thread(target = thread_4,args = (window_num,))
+                thread4.start()
+            else:
+                window_num = 10
+                if(spectro_mode == 1):
+                    base_data = self.cal_baseData(refSpectro_data)
+                    refmall_data = refsmd_data - base_data
+                    self.sgProcess(refmall_data)
+                    self.statusbar.showMessage("已取得參考減暗減基線光譜")
+                else:
+                    base_data = self.cal_baseData(sampleSpectro_data)
+                    sammall_data = samsmd_data - base_data
+                    self.sgProcess(sammall_data)
+                    self.statusbar.showMessage("已取得樣品減暗減基線光譜")
+            self.transBtn_checkable()
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+        
+    def trans(self):
+        global trans_data,bo_mode,t_button_check,window_num
+        try:
+            if(self.Trans_btn.text() == "Stop"):
+                self.t_continuous_check.setChecked(False)
+            elif(self.t_continuous_check.isChecked()):
+                bo_mode = 0
+                window_num = 7
+                t_button_check = 0
+                thread4 = threading.Thread(target = thread_4,args = (window_num,))
+                thread4.start()
+            else:
+                trans_data = sammall_data / refmall_data
+                self.transData2spectro(trans_data)
+                self.statusbar.showMessage("已取得穿透光譜")
+
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+
+    def cal_baseData(self,data):
+        base_data = 0
+        try:           
+            if(self.baseLineMin.text() == "" and self.baseLineMax.text() == ""):
+                self.baseLineMin.setText("800")
+                self.baseLineMax.setText("850")
+            i = int(self.baseLineMin.text())
+            j = int(self.baseLineMax.text())
+            npd_lambda = np.array(d_lambda).astype(int)
+            values = np.array([i,j])
+            sorter = np.argsort(npd_lambda)
+            sorter = sorter[np.searchsorted(npd_lambda,values,sorter = sorter)]
+            s_lambda = np.array(data[sorter[0]:sorter[1]])
+            base_data = np.average(s_lambda)
+            return base_data
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+
+    def img2spectro_garph1(self,readimg):
+        global d_lambda
+        self.spectro_graph.clear()
+        d_lambda.clear()
+        try:
+            for i in range(len(readimg)):
+                d_lambda.append((-1.557*10**-8*(i**3))+(4.386*10**-5*(i**2))+(0.63*i)+ 295.853) 
+            self.spectro_graph.plot(d_lambda,readimg,pen=pg.mkPen('k'))
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e)) 
+
+    def transData2spectro(self,readimg):
+        global sg_timg
+        x = []
+        sg_timg = readimg
+        self.transmission_graph.clear()
+        try:
+            sg_mode = self.sgMode_check()
+            if(sg_mode == 1):
+                readimg = signal.savgol_filter(readimg,int(self.SgPoint_lineEdit.text()),int(self.SgOrder_lineEdit.text()))
+                
+            for i in range(len(readimg)):
+                x.append((-1.557*10**-8*(i**3))+(4.386*10**-5*(i**2))+(0.63*i)+ 295.853) 
+            self.transmission_graph.plot(x,readimg,pen=pg.mkPen('k'))
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e)) 
+
+    def sgProcess(self,ram_img):
+        global sg_img
+        sg_img = ram_img
+        sg_mode = self.sgMode_check() 
+        try:
+            self.sgPara_check()
+            if(sg_mode == 1):
+                ram_img = signal.savgol_filter(ram_img,int(self.SgPoint_lineEdit.text()),int(self.SgOrder_lineEdit.text()))
+                self.img2spectro_garph1(ram_img)
+            else:
+                self.img2spectro_garph1(ram_img)
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e)) 
+
+    def darkPara_check(self):
+        check = 0
+        try:
+            # if(self.MachineNum_lineEdit.text() != ""):
+            #     check = 1
+            # else:
+            #     self.statusbar.showMessage("缺少機台編號")
+            if(check == 0):
+                if(self.shutter_lineEdit.text() == "" or self.AnalogGain_lineEdit.text() == "" or self.DigitalGain_lineEdit.text() == ""):
+                    check = 0
+                    self.statusbar.showMessage("缺少相機參數")
+                else:
+                    check = 1
+            if(check == 1):
+                if(self.databox.currentText() == "none"):
+                    check = 0
+                    self.statusbar.showMessage("機台未連接")
+            if(check == 1):
+                if(self.nos_lineEdit.text() == ""):
+                    check = 0
+                    self.statusbar.showMessage("缺少 nos 參數")
+
+            return check
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e)) 
+
+    def spectroPara_check(self):
+        check = 0
+        try:
+            # if(self.MachineNum_lineEdit.text() != ""):
+            #     check = 1
+            # else:
+            #     self.statusbar.showMessage("缺少機台編號")
+
+            if(check == 0):
+                if(self.LightA_check.isChecked() or self.LightB_check.isChecked() or self.LightC_check.isChecked()):
+                    check = 1
+                else:
+                    check = 0
+                    self.statusbar.showMessage("缺少燈源")
+            if(check == 1):
+                if(self.portbox.currentText() == "none"):
+                    check = 0
+                    self.statusbar.showMessage("機台未連接")
+            if(check == 1):
+                if(self.shutter_lineEdit.text() == "" or self.AnalogGain_lineEdit.text() == "" or self.DigitalGain_lineEdit.text() == ""):
+                    check = 0
+                    self.statusbar.showMessage("缺少相機參數")
+
+            if(check == 1):
+                if(self.nos_lineEdit.text() == ""):
+                    check = 0
+                    self.statusbar.showMessage("缺少 nos 參數")
+
+            if(check == 1):
+                if(self.t1_lineEdit.text() == "" and self.t2_lineEdit.text() == ""):
+                    check = 0
+                    self.statusbar.showMessage("缺少時間參數")
+            return check
+        except Exception as e:
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e)) 
+
+    def Continuous_check(self):
+        if(self.continuous_check.isChecked()):
+            self.ref_default_check.setEnabled(False)
+            if(t_button_check == 0):
+                self.Smd_btn.setEnabled(False)
+                self.Smdmb_btn.setEnabled(False)
+            else:
+                self.smdBtn_checkable()
+                self.smdmbBtn_checkable()
+        else:
+            self.ref_default_check.setEnabled(True)
+
+    def t_Continuous_check(self):
+        if(self.t_continuous_check.isChecked()):
+            if(t_button_check == 0):
+                self.Trans_btn.setEnabled(False)
+            
+    def Ref_default_check(self):
+        if(self.ref_default_check.isChecked()):
+            self.continuous_check.setEnabled(False)
+        else:
+            self.continuous_check.setEnabled(True)           
+
+    def light_choose(self):
+        if(self.LightA_check.isChecked()):
+            light = "$SLD0,"
+        if(self.LightB_check.isChecked()):
+            light = "$SLD1,"
+        if(self.LightC_check.isChecked()):
+            light = "$SLD2,"
+        return light
+
+    def ref_check(self):
+        if(self.Ref_check.isChecked()):
+            self.Sample_check.setChecked(False)
+            self.nos_lineEdit.setEnabled(True)
+            self.baseLineMin.setEnabled(True)
+            self.baseLineMax.setEnabled(True)
+            self.ref_default_check.setEnabled(True)
+            self.continuous_check.setEnabled(True)
+            self.smdBtn_checkable()                       # 判斷是否開啟 smd button  
+            self.smdmbBtn_checkable()                     # 判斷是否開啟 smdmb button 
+            if(t_button_check == 1):
+                self.Dark_btn.setEnabled(True)
+                self.Spectro_btn.setEnabled(True)
+            if(self.sg_check):
+                self.sgProcess(refSpectro_data)
+            else:
+                self.img2spectro_garph1(refSpectro_data)
+        else:
+            self.nos_lineEdit.setEnabled(False)
+            self.baseLineMin.setEnabled(False)
+            self.baseLineMax.setEnabled(False)
+            self.Dark_btn.setEnabled(False)
+            self.Spectro_btn.setEnabled(False)
+            self.Smd_btn.setEnabled(False)
+            self.Smdmb_btn.setEnabled(False)
+
+    def sample_check(self):
+        if(self.Sample_check.isChecked()):
+            self.Ref_check.setChecked(False)
+            self.nos_lineEdit.setEnabled(True)
+            self.ref_default_check.setEnabled(True)
+            self.continuous_check.setEnabled(True)
+            self.baseLineMin.setEnabled(True)
+            self.baseLineMax.setEnabled(True)
+            self.smdBtn_checkable()
+            self.smdmbBtn_checkable()
+            if(t_button_check == 1):
+                self.Dark_btn.setEnabled(True)
+                self.Spectro_btn.setEnabled(True)
+            if(self.sg_check):
+                self.sgProcess(sampleSpectro_data)
+            else:
+                self.img2spectro_garph1(sampleSpectro_data)
+        else:
+            self.nos_lineEdit.setEnabled(False)
+            self.baseLineMin.setEnabled(False)
+            self.baseLineMax.setEnabled(False)
+            self.Dark_btn.setEnabled(False)
+            self.Spectro_btn.setEnabled(False)
+            self.Smd_btn.setEnabled(False)
+            self.Smdmb_btn.setEnabled(False)
+        
+    def spectroMode_check(self):
+        if(self.Ref_check.isChecked()):
+            return 1
+        else:
+            return 2
+        
+    def SG_check(self):
+        if(len(sg_img) != 0):
+            self.sgProcess(sg_img)
+        if(len(sg_timg) != 0):
+            self.transData2spectro(sg_timg)
+        
+
+    def sg_check(self):
+        if(self.Sg_check.isChecked()):
+            self.SgOrder_lineEdit.setEnabled(True)
+            self.SgPoint_lineEdit.setEnabled(True)
+        else:
+            self.SgOrder_lineEdit.setEnabled(False)
+            self.SgPoint_lineEdit.setEnabled(False)
+
+    def sgMode_check(self):
+        if(self.Sg_check.isChecked()):
+            return 1
+        else:
+            return 0
+        
+    def sgPara_check(self):
+        if(self.SgPoint_lineEdit.text() == '' and self.SgOrder_lineEdit.text() == ''):
+            self.SgPoint_lineEdit.setText('5')
+            self.SgOrder_lineEdit.setText('2')     
+    
+    def smdBtn_checkable(self):                                 # 判斷是否有暗光譜及光譜的資料 均有才能啟動 smd_button
+        check = self.spectroMode_check()
+        if(check == 1):
+            if(len(Dark_data) != 0 and len(refSpectro_data) != 0):
+                self.Smd_btn.setEnabled(True)
+            else:
+                self.Smd_btn.setEnabled(False)
+        else:
+            if(len(Dark_data) != 0 and len(sampleSpectro_data) != 0):
+                self.Smd_btn.setEnabled(True)
+            else:
+                self.Smd_btn.setEnabled(False)
+
+    def smdmbBtn_checkable(self):                              # 判斷是否有光譜減光譜的資料 有才能啟動 smdmb_button
+        check = self.spectroMode_check()
+        if(check == 1):
+            if(len(refsmd_data) != 0):
+                self.Smdmb_btn.setEnabled(True)
+            else:
+                self.Smdmb_btn.setEnabled(False)
+        else:
+            if(len(samsmd_data) != 0):
+                self.Smdmb_btn.setEnabled(True)
+            else:
+                self.Smdmb_btn.setEnabled(False)
+    
+    def transBtn_checkable(self):
+        if(len(refmall_data) != 0 and len(sammall_data) != 0):
+            self.Trans_btn.setEnabled(True)
+            self.t_continuous_check.setEnabled(True)
+        else:
+            self.Trans_btn.setEnabled(False)
+            self.t_continuous_check.setEnabled(False)
+
+    def save_data_ckeck(self):
+        if(self.databox.currentText() == 'Ref Default'):
+            self.saveData_btn.setEnabled(True)
+            self.Browse_btn.setEnabled(False)
+            self.SaveFName_lineEdit.setEnabled(False)
+            self.BrowsePath_lineEdit.setEnabled(False)
+
+        elif(self.SaveRaw_check.isChecked() or self.SaveSg_check.isChecked() or self.databox.currentText() == 'All'):
+            self.saveData_btn.setEnabled(True)
+            self.Browse_btn.setEnabled(True)
+            self.BrowsePath_lineEdit.setEnabled(True)
+            self.SaveFName_lineEdit.setEnabled(True)
+        elif(self.SaveRaw_check.isChecked() == False and self.SaveSg_check.isChecked() == False):
+            self.saveData_btn.setEnabled(False)
+            self.Browse_btn.setEnabled(False)
+            self.BrowsePath_lineEdit.setEnabled(False)
+            self.SaveFName_lineEdit.setEnabled(False)
+
+    def y_axis_clicked_t(self):
+        if self.Graph1_yYfix.isChecked():
+            yaxis_min = self.Graph1_Ymin.text()
+            yaxis_max = self.Graph1_Ymax.text() 
+            self.spectro_graph.setYRange(float(yaxis_min),float(yaxis_max),padding = 0)
+            self.Graph1_Ymin.setEnabled(True)
+            self.Graph1_Ymax.setEnabled(True)
+        elif self.Graph1_Yauto.isChecked():
+            self.spectro_graph.enableAutoRange(axis = 'y')
+            self.Graph1_Ymin.setEnabled(False)
+            self.Graph1_Ymax.setEnabled(False)
+
+    def x_axis_clicked_t(self):
+        if self.Graph1_Xfix.isChecked():
+            xaxis_min = self.Graph1_Xmin.text()
+            xaxis_max = self.Graph1_Xmax.text()
+            self.spectro_graph.setXRange(float(xaxis_min),float(xaxis_max),padding = 0)
+            self.Graph1_Xmin.setEnabled(True)
+            self.Graph1_Xmax.setEnabled(True)
+            
+        elif self.Graph1_Xauto.isChecked():
+            self.spectro_graph.enableAutoRange(axis = 'x')
+            self.Graph1_Xmin.setEnabled(False)
+            self.Graph1_Xmax.setEnabled(False)
+    
+    def y_axis_fix_t(self):
+        yaxis_min = self.Graph1_Ymin.text()
+        yaxis_max = self.Graph1_Ymax.text()
+        self.spectro_graph.setYRange(float(yaxis_min),float(yaxis_max),padding = 0)
+    
+    def x_axis_fix_t(self):
+        xaxis_min = self.Graph1_Xmin.text()
+        xaxis_max = self.Graph1_Xmax.text()
+        self.spectro_graph.setXRange(float(xaxis_min),float(xaxis_max),padding = 0)
+ 
+    def y_axis2_clicked_t(self):
+        if self.Graph2_Yfix.isChecked():
+            yaxis_min = self.Graph2_Ymin.text()
+            yaxis_max = self.Graph2_Ymax.text() 
+            self.transmission_graph.setYRange(float(yaxis_min),float(yaxis_max),padding = 0)
+            self.Graph2_Ymin.setEnabled(True)
+            self.Graph2_Ymax.setEnabled(True)
+        elif self.Graph2_Yauto.isChecked():
+            self.transmission_graph.enableAutoRange(axis = 'y')
+            self.Graph2_Ymin.setEnabled(False)
+            self.Graph2_Ymax.setEnabled(False)
+
+    def x_axis2_clicked_t(self):
+        if self.Graph2_Xfix.isChecked():
+            xaxis_min = self.Graph2_Xmin.text()
+            xaxis_max = self.Graph2_Xmax.text()
+            self.transmission_graph.setXRange(float(xaxis_min),float(xaxis_max),padding = 0)
+            self.Graph2_Xmin.setEnabled(True)
+            self.Graph2_Xmax.setEnabled(True)
+        elif self.Graph2_Xauto.isChecked():
+            self.transmission_graph.enableAutoRange(axis = 'x')
+            self.Graph2_Xmin.setEnabled(False)
+            self.Graph2_Xmax.setEnabled(False)
+    
+    def y_axis2_fix_t(self):
+        yaxis_min = self.Graph2_Ymin.text()
+        yaxis_max = self.Graph2_Ymax.text()
+        self.transmission_graph.setYRange(float(yaxis_min),float(yaxis_max),padding = 0)
+    
+    def x_axis2_fix_t(self):
+        xaxis_min = self.Graph2_Xmin.text()
+        xaxis_max = self.Graph2_Xmax.text()
+        self.transmission_graph.setXRange(float(xaxis_min),float(xaxis_max),padding = 0)
+
+    def draw_graph_signal(self):
+        try:
+            signalComm.bo_new_data.emit()
+            return 1
+        except Exception as e:
+            print('error:{}'.format(e))
+            return 0  
+
+    def bo_update_wdata(self):
+        try:
+            if(window_num != 7):
+                self.spectro_graph.clear()
+            else:
+                self.transmission_graph.clear()
+            x = []
+            for i in range(len(ncolmean)):
+                x.append((-1.557*10**-8*(i**3))+(4.386*10**-5*(i**2))+(0.63*i)+ 295.853) 
+                
+            if self.Sg_check.isChecked():
+                y = signal.savgol_filter(ncolmean, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+            else:
+                y = ncolmean
+            if(window_num == 7):
+                self.transmission_graph.plot(x,y,pen = pg.mkPen('k'))
+            else:
+                self.spectro_graph.plot(x,y,pen = pg.mkPen('k'))
+            return 1
+        except Exception as e:
+            print('error:{}'.format(e))
+            return 0
+         
+    def save_ref_default(self):
+        dataframe = pd.DataFrame({'Lambda':d_lambda,'Dark':Dark_data,'Spectrum':refSpectro_data,'Smd':refsmd_data,'Smdmb':refmall_data})
+        dataframe.to_csv('./ttest/ref_default.csv',index = True)
+        pass
+
+    def saveData_bo(self):
+        global refSpectro_data,refsmd_data,refmall_data,Dark_data,sampleSpectro_data,samsmd_data,sammall_data,trans_data
+        ram_data = []
+        sp_mode = self.spectroMode_check() 
+        try:
+            self.statusbar.showMessage("Saving")
+            path = self.SaveFName_lineEdit.text()
+            dic = self.BrowsePath_lineEdit.text()
+            if path == "":
+                path = time.strftime("%Y%m%d_%H%M%S")
+            if dic != "":
+                dic += "/"
+            if(self.databox.currentText() == 'Ref Default'):
+                self.save_ref_default()
+            if self.SaveRaw_check.isChecked():
+                path_raw = dic + path + "_raw.txt"
+                if(self.databox.currentText()=='Transmission'):
+                        check = self.helper_save_funtion_bo(path_raw, trans_data)
+                        if check != 1:
+                            raise Exception
+                if(sp_mode == 1):
+                    if(self.databox.currentText()=='Dark'):
+                        check = self.helper_save_funtion_bo(path_raw, Dark_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='Spectrum'):
+                        check = self.helper_save_funtion_bo(path_raw, refSpectro_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D'):
+                        check = self.helper_save_funtion_bo(path_raw, refsmd_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D - B'):
+                        check = self.helper_save_funtion_bo(path_raw, refmall_data)
+                        if check != 1:
+                            raise Exception
+                else:
+                    if(self.databox.currentText()=='Dark'):
+                        check = self.helper_save_funtion_bo(path_raw, Dark_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='Spectrum'):
+                        check = self.helper_save_funtion_bo(path_raw, sampleSpectro_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D'):
+                        check = self.helper_save_funtion_bo(path_raw, samsmd_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D - B'):
+                        check = self.helper_save_funtion_bo(path_raw, sammall_data)
+                        if check != 1:
+                            raise Exception
+            if self.SaveSg_check.isChecked():
+                path_sg = dic + path + "_sg.txt"
+                if(self.databox.currentText()=='Transmission'):
+                    ram_data = signal.savgol_filter(trans_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                    check = self.helper_save_funtion_bo(path_sg, ram_data)
+                    if check != 1:
+                        raise Exception
+                if(sp_mode == 1):
+                    if(self.databox.currentText()=='Dark'):
+                        ram_data = signal.savgol_filter(Dark_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='Spectrum'):
+                        ram_data = signal.savgol_filter(refSpectro_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D'):
+                        ram_data = signal.savgol_filter(refsmd_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D - B'):
+                        ram_data = signal.savgol_filter(refmall_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+                else:
+                    if(self.databox.currentText()=='Dark'):
+                        ram_data = signal.savgol_filter(refmall_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='Spectrum'):
+                        ram_data = signal.savgol_filter(sampleSpectro_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D'):
+                        ram_data = signal.savgol_filter(samsmd_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+                    elif(self.databox.currentText()=='S - D - B'):
+                        ram_data = signal.savgol_filter(sammall_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                        check = self.helper_save_funtion_bo(path_sg, ram_data)
+                        if check != 1:
+                            raise Exception
+            if(self.databox.currentText()=='All'):
+                self.sgPara_check()
+                path = self.SaveFName_lineEdit.text()
+                dic = self.BrowsePath_lineEdit.text()
+                if path == "":
+                    path = time.strftime("%Y%m%d_%H%M%S")
+                if dic != "":
+                    dic += "/"
+                folder_path = dic + path                 #創立資料夾
+                os.mkdir(folder_path)
+                path = '{}/Dark_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, Dark_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/ref_Spectrum_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, refSpectro_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/ref_Smd_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, refsmd_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/ref_Smdmb_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, refmall_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/sam_Spectrum_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, sampleSpectro_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/sam_Smd_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, samsmd_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/sam_Smdmb_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, sammall_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/Transmission_raw.txt'.format(folder_path)
+                check = self.helper_save_funtion_bo(path, trans_data)
+
+                path = '{}/Dark_sg.txt'.format(folder_path)
+                ram_data = signal.savgol_filter(Dark_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/ref_Spectrum_sg.txt'.format(folder_path)
+                ram_data = signal.savgol_filter(refSpectro_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/ref_Smd_sg.txt'.format(folder_path)
+                ram_data = signal.savgol_filter(refsmd_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/ref_Smdmb_sg.txt'.format(folder_path)
+                ram_data = signal.savgol_filter(refmall_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+                ram_data = signal.savgol_filter(sampleSpectro_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/sam_Smd_sg.txt'.format(folder_path)
+                ram_data = signal.savgol_filter(samsmd_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/sam_Smdmb_sg.txt'.format(folder_path)
+                ram_data = signal.savgol_filter(sammall_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+                path = '{}/Transmission_sg.txt'.format(folder_path)
+                ram_data = signal.savgol_filter(trans_data, int(self.SgPoint_lineEdit.text()), int(self.SgOrder_lineEdit.text()))
+                check = self.helper_save_funtion_bo(path, ram_data)
+                if check != 1:
+                    raise Exception
+            print("Save Complete")
+            self.statusbar.showMessage("Save Complete")
+            
+        except Exception as e:
+            print('error:{}'.format(e))
+            print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+            self.statusbar.showMessage("Save Error")			
+
+    def browse_path_bo(self):
+        filename = QtWidgets.QFileDialog.getExistingDirectory(None, 'Save Path', '')
+        self.BrowsePath_lineEdit.setText(filename)
+
+    def helper_save_funtion_bo(self, path, data):
+        try:
+            f = open(path, 'w')
+            for i in data:
+                f.write(str(i) + "\n")
+            f.close()
+            return 1
+        except Exception as e:
+            print('error:{}'.format(e))
+        return 0
+    
+    def read_ref_default(self):
+        global d_lambda,Dark_data,refSpectro_data
+        try:
+            ref_default = pd.read_csv('./ttest/ref_default.csv')
+            Dark_data = ref_default.iloc[:,2].to_numpy()
+            refSpectro_data = ref_default.iloc[:,3].to_numpy()
+        except FileNotFoundError:
+            print('No default file')
+                 
+    def refresh_com(self):
+        self.portbox.clear()
+        self.portbox.setCurrentIndex(1)
+        self.portbox.addItem("none")
+        portNames = [
+            "/dev/ttyUSB0",
+            "/dev/ttyUSB1",
+            "/dev/ttyUSB2",
+            "/dev/ttyUSB3",
+            "/dev/ttyACM0",
+            "/dev/ttyACM1",
+            "/dev/ttyACM2",
+            "/dev/ttyACM3"
+        ]
+        for pname in portNames:
+            try:
+                ser.port = pname
+                ser.open()
+                if ser.isOpen():
+                    print("Found {}.".format(pname))
+                    self.portbox.addItem(pname)
+                ser.close()
+            except:
+                pass
+
+# 拍照
 def takephoto():
     try:
-        shutter = ui.shutter_edit.text()
-        anolog_gain = ui.anologgain_edit.text()
-        digital_gain = ui.digitalgain_edit.text()
         imgformat = ui.format_box.currentText().lower()
+        if window_num == 1:
+            shutter = ui.shutter_edit.text()
+            anolog_gain = ui.anologgain_edit.text()
+            digital_gain = ui.digitalgain_edit.text()
+            imgname = "./ttest/test.{}".format(imgformat)
+        else:
+            shutter = t_ui.shutter_lineEdit.text()
+            anolog_gain = t_ui.AnalogGain_lineEdit.text()
+            digital_gain = t_ui.DigitalGain_lineEdit.text()
+            imgname = "./ttest/test.{}".format(imgformat)
         
-        imgname = "./ttest/test.{}".format(imgformat)
         subprocess.run(["libcamera-still", "--shutter", shutter, "--analoggain", anolog_gain, "-o", imgname,"--immediate","--nopreview"])
         return 1
     except Exception as e:
         print('error:{}'.format(e))
         return 0    
-        
+    
+# 取 roi 並轉成光譜 
 def crop_image():
     global data, max_value
     try:
@@ -1749,13 +3448,12 @@ def crop_image():
     except Exception as e:
         print('error:{}'.format(e))
         return None 
-
+    
+# auto roi 
 def sum_image():
     global new_y0
-    
     try:
         deltay = int(ui.y1.text())
-        
         imgformat = ui.format_box.currentText().lower()
         sImagePath = "./ttest/test.{}".format(imgformat)
         nImage = cv2.imread(sImagePath, cv2.IMREAD_GRAYSCALE)
@@ -1769,7 +3467,8 @@ def sum_image():
     except Exception as e:
         print('error:{}'.format(e))
         return 0
-                
+    
+# 波長轉換
 def wavelength_convert():
     global wdata
     wdata.clear()
@@ -1781,74 +3480,103 @@ def wavelength_convert():
         
         for i in range(len(data)):
             wdata.append((a3*(i**3))+(a2*(i**2))+(a1*i)+ a0)
-        
         return 1
     except Exception as e:
         print('error:{}'.format(e))
         return 0
-        
+    
+# autoscaling 
 def checkluminous():
     try:
-        sh = int(ui.shutter_edit.text())
-        if(sh>=1000000):
-            raise Exception
+        global goal_st
+        if window_num == 1:
+            sh = int(ui.shutter_edit.text())
+        else:
+            sh = int(t_ui.shutter_lineEdit.text())
+
+        if(sh>=st_max):
+            goal_st = st_max
+            signalComm.new_goal_st.emit()
+            return '5'
         if (max_value >= I_max):
             return '0'
         elif (max_value > I_thr_top):
             return '1'
         elif (max_value < I_thr_top and max_value > I_thr_bottom):
             return '2'
+        elif (max_value < I_thr_bottom /2):
+            return '4'
         elif (max_value < I_thr_bottom):
             return '3'
     except Exception as e:
-        print('error:{}'.format(e))
-        return 0
-        
+        raise Exception("Check Error")
+        #print('error:{}'.format(e))
+        #return 0
+    
+    # autoscaling 調整 shutter / 2
 def set_half_exp():
     global st1, I1
-    
     try:
-        st1 = float(ui.shutter_edit.text())
-        I1 = max_value
-        
-        st = int(ui.shutter_edit.text())
-        ui.shutter_edit.setText(str(int(st/2)))
+        if window_num == 1:
+            st1 = float(ui.shutter_edit.text())
+            I1 = max_value
+            st = int(ui.shutter_edit.text())
+            ui.shutter_edit.setText(str(int(st/2)))
+        else:
+            st1 = float(t_ui.shutter_lineEdit.text())
+            I1 = max_value
+            st = int(t_ui.shutter_lineEdit.text())
+            t_ui.shutter_lineEdit.setText(str(int(st/2)))
         return 1
     except Exception as e:
         print('error:{}'.format(e))
         return 0
-
+    
+    # autoscaling 調整 shutter * 2
 def set_double_exp():
     global st1, I1
-    
     try:
-        st1 = float(ui.shutter_edit.text())
-        I1 = max_value
-        
-        st = int(ui.shutter_edit.text())
-        ui.shutter_edit.setText(str(int(st*2)))
+        if window_num == 1:
+            st1 = float(ui.shutter_edit.text())
+            I1 = max_value
+            
+            st = int(ui.shutter_edit.text())
+            ui.shutter_edit.setText(str(int(st*2)))
+        else:
+            st1 = float(t_ui.shutter_lineEdit.text())
+            I1 = max_value
+            
+            st = int(t_ui.shutter_lineEdit.text())
+            t_ui.shutter_lineEdit.setText(str(int(st*2)))
         return 1
     except Exception as e:
         print('error:{}'.format(e))
         return 0
-
+    
+    # autoscaling peak 確認
 def find_target_exp():
     global goal_st
-    
     try:
-        st2 = float(ui.shutter_edit.text())
+        c = '1'
+        if window_num == 1:
+            st2 = float(ui.shutter_edit.text())
+        else:
+            st2 = float(t_ui.shutter_lineEdit.text())
+
         I2 = max_value
         
         goal_st = int(st1 + ((st1 - st2)/(I1 - I2) * (I_thr - I1)))
-        if goal_st > st_max:
-            print("Can't calculate shutter")
-            goal_st = shutter
+        if goal_st >= st_max:
+            print("Light too Weak")
+            goal_st = st_max
+            c = '2'
         elif goal_st < 0:
-            print("Goal Error")
+            print("Light too Strong")
             goal_st = shutter
+            c = '3'
             
         signalComm.new_goal_st.emit()
-        return 1
+        return c
     except Exception as e:
         goal_st = shutter
         signalComm.new_goal_st.emit()
@@ -1857,7 +3585,6 @@ def find_target_exp():
 
 def number_ofscan():
     global numb_ofscan
-    
     try:
         numb_ofscan.append(data)
         return 1
@@ -1866,10 +3593,19 @@ def number_ofscan():
         return 0
 
 def cal_number_ofscan():
-    global ncolmean
+    global ncolmean,sg_img,sg_timg
     try:
         ncolmean = np.mean(np.asarray(numb_ofscan), axis = 0)
-
+        if(window_num == 5):
+            ncolmean = ncolmean - Dark_data
+        elif(window_num == 6):
+            basedata = t_ui.cal_baseData(ncolmean)
+            ncolmean = ncolmean - basedata
+        sg_img = ncolmean
+        if(window_num == 7):
+            basedata = t_ui.cal_baseData(ncolmean)
+            ncolmean = (ncolmean - Dark_data - basedata) / refmall_data
+            sg_timg = ncolmean
         return 1
     except Exception as e:
         print('error:{}'.format(e))
@@ -1933,7 +3669,6 @@ def find_hg_peaks():
         for i in range(len(hg_peak1)):
             if i > 0 and i < 4:
                 hg_peaks.append(hg_peak1[i])
-                
         return 1
     except Exception as e:
         print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
@@ -1995,17 +3730,112 @@ def find_ar_peaks():
         print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
         return 0
     
+def savedatas(img):
+    global Dark_data,refSpectro_data,sampleSpectro_data,refsmd_data,samsmd_data,refsmall_data,sammall_data,trans_data
+    try:
+        if window_num == 4:
+            Dark_data = img
+        elif window_num == 3:                    # 參考或取樣光譜
+            if spectro_mode == 1:                   # 參考
+                refSpectro_data = img
+            else:
+                sampleSpectro_data = img
+        elif window_num == 5:
+            if spectro_mode == 1:
+                refsmd_data = img
+            else:
+                samsmd_data = img
+        elif window_num == 6:
+            if spectro_mode == 1:
+                refsmall_data = img
+            else:
+                sammall_data = img
+        elif window_num == 7:
+            trans_data = img
+        return 1
+    except Exception as e:
+        print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+        return 0
+
+def close_light_helper():
+    global t_button_check
+    #if window_num == 3 or window_num == 4:
+    t_ui.smdBtn_checkable()
+    t_ui.smdmbBtn_checkable()
+    t_ui.transBtn_checkable()
+    if window_num != 4:
+        time.sleep(int(t_ui.t2_lineEdit.text()))
+    t_button_check = 1
+
+    if (t_ui.Ref_check.isChecked() or t_ui.Sample_check.isChecked()):
+        t_ui.Spectro_btn.setEnabled(True)
+        t_ui.Dark_btn.setEnabled(True)
+        if(t_ui.continuous_check.isChecked()):
+            t_ui.Smd_btn.setEnabled(True)
+            t_ui.Smdmb_btn.setEnabled(True)
+    if(t_ui.t_continuous_check.isChecked()):
+        t_ui.Trans_btn.setEnabled(True)
+        
+def btnEnable_check():
+    _translate = QtCore.QCoreApplication.translate
+    if window_num == 4:
+        t_ui.Dark_btn.setText(_translate("Transmission_Window", "Stop"))
+        t_ui.Spectro_btn.setEnabled(False)
+        t_ui.Smd_btn.setEnabled(False)
+        t_ui.Smdmb_btn.setEnabled(False)
+    elif window_num == 3:
+        t_ui.Spectro_btn.setEnabled(True)
+        t_ui.Spectro_btn.setText(_translate("Transmission_Window", "Stop"))
+        t_ui.Dark_btn.setEnabled(False)
+        t_ui.Smd_btn.setEnabled(False)
+        t_ui.Smdmb_btn.setEnabled(False)
+    elif window_num == 5:
+        t_ui.Smd_btn.setEnabled(True)
+        t_ui.Smd_btn.setText(_translate("Transmission_Window", "Stop"))
+        t_ui.Dark_btn.setEnabled(False)
+        t_ui.Spectro_btn.setEnabled(False)
+        t_ui.Smdmb_btn.setEnabled(False)
+    elif window_num == 6:
+        t_ui.Smdmb_btn.setEnabled(True)
+        t_ui.Smdmb_btn.setText(_translate("Transmission_Window", "Stop"))
+        t_ui.Dark_btn.setEnabled(False)
+        t_ui.Spectro_btn.setEnabled(False)
+        t_ui.Smd_btn.setEnabled(False)
+    elif window_num == 7:
+        t_ui.Trans_btn.setEnabled(True)
+        t_ui.Trans_btn.setText(_translate("Transmission_Window", "Stop"))
+        t_ui.Dark_btn.setEnabled(False)
+        t_ui.Spectro_btn.setEnabled(False)
+        t_ui.Smd_btn.setEnabled(False)
+        t_ui.Smdmb_btn.setEnabled(False)
+
+def continue_stop():
+    _translate = QtCore.QCoreApplication.translate
+    if window_num == 3:
+        t_ui.Spectro_btn.setEnabled(False)
+        t_ui.Spectro_btn.setText(_translate("Transmission_Window", "Start"))
+    elif window_num == 4:
+        t_ui.Dark_btn.setText(_translate("Transmission_Window", "Start"))
+    elif window_num == 5:
+        t_ui.Smd_btn.setEnabled(False)
+        t_ui.Smd_btn.setText(_translate("Transmission_Window", "Start"))
+    elif window_num == 6:
+        t_ui.Smdmb_btn.setEnabled(False)
+        t_ui.Smdmb_btn.setText(_translate("Transmission_Window", "Start"))
+    elif window_num == 7:
+        t_ui.Trans_btn.setEnabled(False)
+        t_ui.Trans_btn.setText(_translate("Transmission_Window", "Start"))
+
 def thread_1(): #main function
-    global mode, image_mode, numb_ofscan, roi_mode
+    global mode, image_mode, numb_ofscan, roi_mode, window_num
     scan_time = 0
     first_scan = 1
-    
     ui.statusbar.showMessage("CAPTURING IMAGE")
-    
     while True:
         if mode == 0:
             if flag == 1:
                 mode = 10
+                window_num = 1
             else:
                 break
         elif mode == 10:
@@ -2087,10 +3917,18 @@ def thread_2(): #auto scaling
     global auto_mode
     t_times = 0
     first_scan = 1
-    
-    ui.statusbar.showMessage("AUTO SCALING")
-    
+    if window_num == 1:
+        ui.statusbar.showMessage("AUTO SCALING")
+    else:
+        t_ui.statusbar.showMessage("AUTO SCALING")
+        
     while True:
+        if auto_mode == 0:
+            check = t_ui.light_open()
+            if check == 1:
+                auto_mode = 10
+            else:
+                auto_mode = 999
         if auto_mode == 10:
             check = takephoto()
             if check == 1:
@@ -2121,14 +3959,18 @@ def thread_2(): #auto scaling
                 auto_mode = 999
         elif auto_mode == 40:
             check = checkluminous()
-            if check == '0': # peak(max_value) > I_max
+            if check == '0':    # peak(max_value) > I_max
                 auto_mode = 51
-            elif check == '1': # peak(max_value) > I_thr_top
+            elif check == '1':  # peak(max_value) > I_thr_top
                 auto_mode = 50
-            elif check == '2': # peak(max_value) is acceptable 
+            elif check == '2':  # peak(max_value) is acceptable 
                 auto_mode = 70
-            elif check == '3': # peak(max_value) < I_thr_buttom
+            elif check == '3':  # peak(max_value) < I_thr_buttom
                 auto_mode = 55
+            elif check == '4':
+                auto_mode = 56
+            elif check == '5':
+                auto_mode = 70
             else:
                 auto_mode = 999
         elif auto_mode == 50:
@@ -2151,15 +3993,23 @@ def thread_2(): #auto scaling
                 t_times = 1
             else:
                 auto_mode = 999
-        elif auto_mode == 60:
-            check = find_target_exp()
+        elif auto_mode == 56:
+            check = set_double_exp()
             if check == 1:
                 auto_mode = 10
+            else:
+                auto_mode = 999
+        elif auto_mode == 60:
+            check = find_target_exp()
+            if check == '1':
+                auto_mode = 10
                 t_times = 0
+            elif check == '2' or check == '3':
+                auto_mode = 70
             else:
                 auto_mode = 999
         elif auto_mode == 70:
-            check = numb_ofscan()
+            check = number_ofscan()
             if check == 1:
                 auto_mode = 80
             else:
@@ -2171,23 +4021,41 @@ def thread_2(): #auto scaling
             else:
                 auto_mode = 999
         elif auto_mode == 100:
-            check = ui.draw_spectrum_graph_signal()
-            if check == 1:
-                auto_mode = 110
+            if window_num == 1:
+                check = ui.draw_spectrum_graph_signal()
+                if check == 1:
+                    auto_mode = 110
+                else:
+                    auto_mode = 999
             else:
-                auto_mode = 999
+                check = t_ui.draw_graph_signal()
+                if check == 1:
+                    auto_mode = 120
+                else:
+                    auto_mode = 999
         elif auto_mode == 110:
             check = ui.update_image_signal()
             if check == 1:
                 break
             else:
                 auto_mode = 999
+        elif auto_mode == 120:
+            t_ui.light_close()
+            close_light_helper()
+            break
         elif auto_mode == 999:
             print("Auto Scaling Error")
-            ui.statusbar.showMessage("AUTO SCALING Error")
+            if window_num == 1:
+                ui.statusbar.showMessage("AUTO SCALING Error")
+            else:
+                t_ui.statusbar.showMessage("AUTO SCALING Error")
             raise Exception
+    numb_ofscan.clear()
     print('Auto Scaling Complete')
-    ui.statusbar.showMessage("AUTO SCALING Complete")
+    if window_num == 1:
+        ui.statusbar.showMessage("AUTO SCALING Complete")
+    else:
+        t_ui.statusbar.showMessage("AUTO SCALING Complete")
 
 def thread_3(): #auto find peak
     ui.statusbar.showMessage("FINGING PEAK")
@@ -2208,7 +4076,7 @@ def thread_3(): #auto find peak
         ar_peak.clear() 
         ar_peaks.clear()
         
-        check = find_hgar_dividerpoint()
+        check = find_hgar_dividerpoint() 
         if check != 1:
             raise Exception ("Cannot find Hg-Ar dividerpoint")
         check = find_hg_peaks()
@@ -2223,28 +4091,118 @@ def thread_3(): #auto find peak
         print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
         ui.statusbar.showMessage("AUTO FIND PEAK ERROR")
         return 0
+    
+    # 取參考及取樣光譜
+def thread_4(window_num):
+    global bo_mode,numb_ofscan,ncolmean
+    scan_time = 0
+    ncolmean = []
+    bo_num_scan = int(t_ui.nos_lineEdit.text())
+    t_ui.statusbar.showMessage("CAPTURING IMAGE")
+    try:
+        while True:
+            if bo_mode == 0:
+                if t_ui.continuous_check.isChecked() or t_ui.t_continuous_check.isChecked():
+                    btnEnable_check()
+                bo_mode = 5
+            elif bo_mode == 5:
+                if window_num != 4:  
+                    check = t_ui.light_open()
+                    if check == 1:
+                        bo_mode = 10
+                    else:
+                        bo_mode = 999 
+                else:
+                    bo_mode = 10
+            elif bo_mode == 10:
+                check = takephoto()
+                if check == 1:
+                    bo_mode = 30
+                else:
+                    bo_mode = 999
+            elif bo_mode == 30:
+                check = crop_image()
+                if check == 1:
+                    bo_mode = 31
+                else:
+                    bo_mode = 999
+            elif bo_mode == 31:
+                check = number_ofscan()
+                if check == 1:
+                    scan_time += 1
+                    if scan_time < int(bo_num_scan):
+                        bo_mode = 10
+                    else:
+                        bo_mode = 32
+                else:
+                    bo_mode = 999
+            elif bo_mode == 32:
+                check = cal_number_ofscan()
+                if check == 1:
+                    bo_mode = 40
+                else:
+                    bo_mode = 999
+            elif bo_mode == 40:
+                check = t_ui.draw_graph_signal()
+                if check == 1:
+                    bo_mode = 50
+                else:
+                    bo_mode = 999
+            elif bo_mode == 50:
+                bo_mode = 10
+                numb_ofscan.clear()
+                scan_time = 0
+                if(window_num == 7):
+                    if(not t_ui.t_continuous_check.isChecked()):
+                        continue_stop()
+                        bo_mode = 60
+                else:
+                    if not t_ui.continuous_check.isChecked():
+                        continue_stop()
+                        bo_mode = 60
+            elif bo_mode == 60:
+                check = savedatas(ncolmean)
+                if check == 1:
+                    if window_num != 4:
+                        t_ui.light_close()
+                    close_light_helper()
+                    break
+                else:
+                    bo_mode = 999
+            elif bo_mode == 999:
+                print("Main Function Error")
+                t_ui.statusbar.showMessage("CAPTURE IMAGE Error")
+                raise Exception
+        print("Main Function Complete")
+        t_ui.statusbar.showMessage("CAPTURE IMAGE COMPLETE")
+    except Exception as e:
+        print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
+        t_ui.statusbar.showMessage("ERROR")
+        return 0
 
 def check_dir():
     try:
         filename = "./ttest/test.txt"
         os.makedirs(os.path.dirname(filename), exist_ok=True)
-        
     except Exception as e:
         print("Error line: {}\nError: {}".format(e.__traceback__.tb_lineno, e))
         raise    
-                 
+    
 if __name__ == "__main__":
     try:       
         print("Checking...")
-        check_dir()
         app = QtWidgets.QApplication(sys.argv)
         mainwindow = QtWidgets.QMainWindow()
         secondwindow = QtWidgets.QMainWindow()
-        signalComm = SignalCommunication()  
+        Transmission_window = QtWidgets.QMainWindow()
+        signalComm = SignalCommunication()
         ui = Ui_mainwindow()
         c_ui = Ui_w_calibration()
+        t_ui = UI_Transmission_Window()
         ui.setupUi(mainwindow)
         c_ui.setupUi(secondwindow)
+        t_ui.setupUi(Transmission_window)
+        check_dir()
         mainwindow.show()
         sys.exit(app.exec_())
     except Exception as ex:
