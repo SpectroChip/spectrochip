@@ -1,4 +1,4 @@
-print("Starting up...")
+print("Starting up....")
 version = "V4.4"
 
 print("Importing...")
