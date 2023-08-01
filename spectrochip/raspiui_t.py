@@ -15,7 +15,7 @@ np.set_printoptions(threshold = sys.maxsize)
 config = configparser.ConfigParser()             #configparser 文件解析器
 config.read('config.ini')
 
-###################################### Initialization ####################################
+###################################### Initialization ###################################
 
 # 相機參數
 shutter = config['default']['shutter']          #max 1,000,000
