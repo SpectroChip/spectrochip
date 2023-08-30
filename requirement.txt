@@ -3,3 +3,5 @@ opencv-python-headless == 4.6.0.66
 pyqtgraph == 0.13.1
 numpy == 1.23.5
 scipy == 1.9.3
+pandas == 2.0.3
+
